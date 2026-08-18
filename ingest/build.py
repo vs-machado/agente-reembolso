@@ -48,8 +48,40 @@ def _dividir(texto: str, limite: int, sobreposicao: int = 0) -> Iterator[str]:
         inicio = fim - sobreposicao
 
 
-def _blocos_pdf(caminho: Path) -> Iterator[tuple[int, str, str]]:
+def _registro_tabela(cabecalhos: list[str], valores: list[str | None], vigencia: str) -> str:
+    """Repete o contexto necessário para tornar uma linha de tabela indexável."""
+    campos = [
+        f"{_normalizar(cabecalho)}: {_normalizar(valor)}"
+        for cabecalho, valor in zip(cabecalhos, valores)
+        if cabecalho and valor
+    ]
+    return " | ".join([*campos, f"Vigência: {vigencia}"])
+
+
+def _blocos_tabela(pagina: fitz.Page, numero: int, vigencia: str) -> Iterator[tuple[int, str, str]]:
+    tabelas = pagina.find_tables().tables
+    if tabelas:
+        # Preserva a introdução da página sem duplicar o conteúdo da tabela.
+        limite_tabela = min(tabela.bbox[1] for tabela in tabelas)
+        introducao = _normalizar(pagina.get_text(clip=fitz.Rect(0, 0, pagina.rect.width, limite_tabela)))
+        if introducao:
+            yield numero, f"pagina {numero}, introdução", introducao
+    for indice_tabela, tabela in enumerate(tabelas, start=1):
+        dados = tabela.extract()
+        if not dados:
+            continue
+        cabecalhos, *linhas = dados
+        for indice_linha, linha in enumerate(linhas, start=1):
+            registro = _registro_tabela(cabecalhos, linha, vigencia)
+            if registro:
+                yield numero, f"pagina {numero}, tabela {indice_tabela}, linha {indice_linha}", registro
+
+
+def _blocos_pdf(caminho: Path, vigencia_tabela: str | None = None) -> Iterator[tuple[int, str, str]]:
     for numero, pagina in enumerate(fitz.open(caminho), start=1):
+        if vigencia_tabela:
+            yield from _blocos_tabela(pagina, numero, vigencia_tabela)
+            continue
         texto = _normalizar(pagina.get_text())
         if not texto:
             continue
@@ -69,9 +101,10 @@ def _blocos_docx(caminho: Path) -> Iterator[tuple[int, str, str]]:
         yield 1, f"FAQ {indice // 2 + 1}", bloco
 
 
-def _extrair(caminho: Path) -> Iterator[tuple[int, str, str]]:
+def _extrair(caminho: Path, documento: DocumentoNormativoModel) -> Iterator[tuple[int, str, str]]:
     if caminho.suffix.lower() == ".pdf":
-        yield from _blocos_pdf(caminho)
+        vigencia_tabela = documento.vigencia_inicio.isoformat() if documento.tipo == "tabela" and documento.vigencia_inicio else None
+        yield from _blocos_pdf(caminho, vigencia_tabela)
     elif caminho.suffix.lower() == ".docx":
         yield from _blocos_docx(caminho)
 
@@ -96,7 +129,7 @@ def _criar_nos() -> tuple[list[TextNode], list[dict], dict]:
             inventario["pendentes_curadoria"].append(documento.model_dump(mode="json"))
             continue
         quantidade_pais = quantidade_subchunks = 0
-        blocos = list(_extrair(caminho))
+        blocos = list(_extrair(caminho, documento))
         grupos: list[tuple[int, str, str]] = []
         atual: list[str] = []
         pagina_atual = 0
@@ -139,6 +172,10 @@ def main() -> int:
     temporario = DIR_STORAGE.with_name(f"{DIR_STORAGE.name}.tmp")
     shutil.rmtree(temporario, ignore_errors=True)
     temporario.mkdir(parents=True)
+    reranker = DIR_STORAGE / "reranker"
+    if reranker.exists():
+        # Pesos ONNX são provisionados fora do Git e não devem ser recriados aqui.
+        shutil.copytree(reranker, temporario / "reranker")
 
     subchunks, pais, inventario = _criar_nos()
     if not subchunks:

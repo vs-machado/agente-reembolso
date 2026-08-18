@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 
-from ingest.build import _blocos_docx, _blocos_pdf, _criar_nos, _dividir, _tokens
+from ingest.build import _blocos_docx, _blocos_pdf, _criar_nos, _dividir, _registro_tabela, _tokens
 
 
 class PaginaFalsa:
@@ -51,6 +51,25 @@ class TesteBuild(unittest.TestCase):
         bloco = next(texto for _, _, texto in blocos if "Por onde começo?" in texto)
 
         self.assertIn("Confirme primeiro", bloco)
+
+    def test_registro_tabela_repete_cabecalhos_e_vigencia(self) -> None:
+        registro = _registro_tabela(
+            ["Código TUSS", "Descrição", "Teto (R$)"],
+            ["10101012", "Consulta médica", "R$ 475,50"],
+            "2026-01-01",
+        )
+
+        self.assertEqual(
+            registro,
+            "Código TUSS: 10101012 | Descrição: Consulta médica | Teto (R$): R$ 475,50 | Vigência: 2026-01-01",
+        )
+
+    def test_tabela_urs_gera_linhas_semanticas(self) -> None:
+        blocos = list(_blocos_pdf(Path("kb/tabela_urs_2026.pdf"), "2026-01-01"))
+        registro = next(texto for _, _, texto in blocos if "Código TUSS: 10101012" in texto)
+
+        self.assertIn("Descrição do procedimento: Consulta", registro)
+        self.assertIn("Vigência: 2026-01-01", registro)
 
     def test_subchunks_referenciam_chunk_pai_rastreavel(self) -> None:
         subchunks, pais, _ = _criar_nos()
