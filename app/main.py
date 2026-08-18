@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app.agents.supervisor.graph import Supervisor
 from app.llm import carregar_env
 from app.schemas import ChatRequest, ChatResponse
 
@@ -15,6 +16,7 @@ from app.schemas import ChatRequest, ChatResponse
 carregar_env()
 
 app = FastAPI(title="Agente de Reembolso")
+supervisor = Supervisor()
 
 
 @app.get("/health")
@@ -33,10 +35,11 @@ def chat(req: ChatRequest) -> ChatResponse:
     O avaliador NÃO reenvia o histórico: recupere o estado da conversa pelo
     `session_id`, com o checkpointer do seu grafo.
     """
-    raise NotImplementedError("implemente o supervisor em app/agents/supervisor/")
+    return supervisor.responder(req)
 
 
 @app.post("/reset")
 def reset() -> dict:
     """Limpa estado e sessões. Chamado entre conversas."""
-    raise NotImplementedError("implemente a limpeza de estado")
+    supervisor.limpar_sessoes()
+    return {"status": "ok"}
