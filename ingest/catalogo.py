@@ -155,8 +155,62 @@ def _alvos(texto: str, tipo: TipoDocumento) -> list[str]:
         if artigos:
             alvos.add(f"ART-{artigos[-1]}")
     alvos.update(f"ART-{numero}" for numero in re.findall(r"restabelecida\s+a\s+redacao\s+original\s+do\s+art\.\s*(\d+)", normalizado))
-    alvos.update(f"TUSS-{codigo}" for codigo in re.findall(r"codigo\s+tuss\s*-?\s*(\d+)", normalizado))
+    for caput, paragrafo, unico, artigo in re.findall(r"(?:(caput)|[§�]\s*(\d+)(?:º|o|�)?|(paragrafo\s+unico))\s+do\s+art\.?\s*(\d+).*?passa\s+a\s+vigorar", normalizado):
+        sufixo = "CAPUT" if caput else f"PAR-{paragrafo}" if paragrafo else "PAR-UNICO"
+        alvos.add(f"ART-{artigo}-{sufixo}")
+    for item, anexo in re.findall(r"item\s+(\d+(?:\.\d+)*)\s+do\s+anexo\s+([ivxlcdm]+|[a-z])[^.]{0,250}?passa\s+a\s+vigorar", normalizado):
+        alvos.add(f"ANEXO-{anexo.upper()}-ITEM-{item}")
+    for parametro, chave in ((r"valor\s+da\s+urs", "PARAM-VALOR-URS"), (r"percentual\s+de\s+coparticipacao", "PARAM-COPARTICIPACAO")):
+        if re.search(rf"{parametro}[^.]{{0,250}}(?:passa\s+a\s+vigorar|fica\s+(?:fixado|alterado))", normalizado):
+            alvos.add(chave)
+    # Uma alteração explícita de dispositivo é mais precisa que a referência
+    # ampla da ementa ao artigo que o contém.
+    for alvo in tuple(alvos):
+        if alvo.startswith("ART-") and any(item.startswith(f"{alvo}-") for item in alvos):
+            alvos.discard(alvo)
     return sorted(alvos)
+
+
+def extrair_referencias_normativas(texto: str) -> list[str]:
+    """Normaliza dispositivos citados ou definidos em um trecho normativo."""
+    referencias: set[str] = set()
+    normalizado = _sem_acentos(texto)
+
+    for prefixo, padrao in (
+        ("TITULO", r"titulo\s+([ivxlcdm]+|\d+)"),
+        ("CAPITULO", r"capitulo\s+([ivxlcdm]+|\d+|unico)"),
+        ("SECAO", r"secao\s+([ivxlcdm]+|\d+|unica)"),
+        ("ANEXO", r"anexo\s+([ivxlcdm]+|[a-z])\b"),
+    ):
+        referencias.update(f"{prefixo}-{valor.upper()}" for valor in re.findall(padrao, normalizado))
+    referencias.update(f"NT-{int(numero):02d}" for numero in re.findall(r"nota tecnica\s+(\d+)", normalizado))
+    referencias.update(f"TUSS-{codigo}" for codigo in re.findall(r"(?:codigo\s+)?tuss\s*-?\s*(\d+)", normalizado))
+    referencias.update(f"ANEXO-{anexo.upper()}-ITEM-{item}" for item, anexo in re.findall(r"item\s+(\d+(?:\.\d+)*)\s+do\s+anexo\s+([ivxlcdm]+|[a-z])", normalizado))
+    referencias.update(f"ITEM-{item}" for item in re.findall(r"(?<!\d)(\d+(?:\.\d+)+)\.\s", normalizado))
+
+    for artigo in re.findall(r"art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}")
+    for paragrafo, artigo in re.findall(r"§\s*(\d+)\s+do\s+art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}-PAR-{paragrafo}")
+    for artigo in re.findall(r"caput\s+do\s+art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}-CAPUT")
+    for artigo in re.findall(r"paragrafo\s+unico\s+do\s+art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}-PAR-UNICO")
+    for inciso, artigo in re.findall(r"inciso\s+([ivxlcdm]+)\s+do\s+art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}-INC-{inciso.upper()}")
+    for alinea, artigo in re.findall(r"alinea\s+([a-z])\s+do\s+art\.\s*(\d+)", normalizado):
+        referencias.add(f"ART-{artigo}-AL-{alinea.upper()}")
+
+    # Dispositivos próprios podem mencionar parágrafos sem repetir o artigo.
+    for trecho in re.split(r"(?=Art\.\s*\d+)", texto):
+        artigo = re.match(r"Art\.\s*(\d+)", trecho)
+        if not artigo:
+            continue
+        referencias.update(f"ART-{artigo.group(1)}-PAR-{numero}" for numero in re.findall(r"§\s*(\d+)", trecho))
+        if re.search(r"paragrafo unico", _sem_acentos(trecho)):
+            referencias.add(f"ART-{artigo.group(1)}-PAR-UNICO")
+
+    return sorted(referencias)
 
 
 def extrair_documento(caminho: Path) -> DocumentoNormativoModel:

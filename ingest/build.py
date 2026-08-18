@@ -21,7 +21,7 @@ from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from app.llm import criar_embeddings_llamaindex
-from ingest.catalogo import DocumentoNormativoModel, extrair_catalogo
+from ingest.catalogo import DocumentoNormativoModel, extrair_catalogo, extrair_referencias_normativas
 
 RAIZ = Path(__file__).resolve().parents[1]
 DIR_KB = RAIZ / "kb"
@@ -151,8 +151,7 @@ def _criar_nos() -> tuple[list[TextNode], list[dict], dict]:
             for indice_pai, conteudo in enumerate(_dividir(bloco, 650, 80), start=1):
                 meta = _metadados(documento, pagina, estrutural)
                 pai_id = sha256(f"{caminho.name}|{pagina}|{estrutural}|{indice_pai}".encode()).hexdigest()[:20]
-                meta["referencias_normativas"] = sorted(set(re.findall(r"(?:art\.\s*(\d+)|\b(TUSS-\d+)\b)", conteudo, flags=re.IGNORECASE)))
-                meta["referencias_normativas"] = [f"ART-{artigo}" if artigo else codigo.upper() for artigo, codigo in meta["referencias_normativas"]]
+                meta["referencias_normativas"] = extrair_referencias_normativas(conteudo)
                 pai = {"chunk_pai_id": pai_id, "texto": conteudo, "metadados": meta}
                 pais.append(pai)
                 quantidade_pais += 1

@@ -49,6 +49,15 @@ class TesteRetriever(unittest.TestCase):
 
         self.assertEqual([item[0] for item in resultado], [circular])
 
+    def test_circular_preserva_dispositivo_nao_alterado_do_artigo(self) -> None:
+        circular = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "circular", "alvos_normativos": ["ART-41-PAR-2"]}))
+        caput = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "regulamento", "referencias_normativas": ["ART-41", "ART-41-CAPUT"]}))
+        paragrafo = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "regulamento", "referencias_normativas": ["ART-41", "ART-41-PAR-2"]}))
+
+        resultado = _aplicar_precedencia([(circular, 1, ("bm25",)), (caput, 0.5, ("vetorial",)), (paragrafo, 0.4, ("vetorial",))])
+
+        self.assertEqual([item[0] for item in resultado], [circular, caput])
+
     def test_reranker_reordena_candidatos_em_lote(self) -> None:
         class TokenizerFalso:
             def encode(self, *_args):
