@@ -61,6 +61,16 @@ def _vigente(metadados: dict, referencia: date | None) -> bool:
     return (not inicio or date.fromisoformat(inicio) <= referencia) and (not fim or referencia <= date.fromisoformat(fim))
 
 
+def _ids_aplicaveis(metadados_por_id: dict[str, dict], referencia: date | None) -> list[str]:
+    """Seleciona subchunks antes da busca vetorial."""
+    return [subchunk_id for subchunk_id, metadados in metadados_por_id.items() if _vigente(metadados, referencia)]
+
+
+def _mascara_aplicaveis(corpus: list[dict], referencia: date | None) -> list[int]:
+    """Impede que BM25 atribua score a fontes não aplicáveis."""
+    return [int(_vigente(metadados, referencia)) for metadados in corpus]
+
+
 def _aplicar_precedencia(candidatos: list[tuple[object, float, tuple[str, ...]]]) -> list[tuple[object, float, tuple[str, ...]]]:
     """Remove a redação anterior somente nos dispositivos alcançados por circular."""
     alvos = {
@@ -131,11 +141,29 @@ class RetrieverHibrido:
         self._pais = {item["chunk_pai_id"]: item for item in json.loads((diretorio / "chunks_pai.json").read_text(encoding="utf-8"))}
         self._reranker = RerankerOnnx(diretorio / "reranker")
 
+    def _recuperar_bm25(self, consulta: str, mascara: list[int]) -> list:
+        """Cria uma visão filtrada do índice BM25 sem reindexar o corpus."""
+        retriever = BM25Retriever(
+            existing_bm25=self._bm25.bm25,
+            stemmer=self._bm25.stemmer,
+            similarity_top_k=LIMITE_RETRIEVER,
+            skip_stemming=self._bm25.skip_stemming,
+            token_pattern=self._bm25.token_pattern,
+            corpus_weight_mask=mascara,
+        )
+        return retriever.retrieve(consulta)
+
     def recuperar(self, consulta: str, data_atendimento: date | None = None, limite: int = 8) -> list[FonteModel]:
         """Retorna chunks-pai normativos, deduplicados e rastreáveis."""
-        vetorial = self._indice.as_retriever(similarity_top_k=LIMITE_RETRIEVER).retrieve(consulta)
-        lexical = self._bm25.retrieve(consulta)
+        metadados_vetoriais = self._indice.vector_store.data.metadata_dict
+        ids_aplicaveis = _ids_aplicaveis(metadados_vetoriais, data_atendimento)
+        if not ids_aplicaveis:
+            LOG.info("rag consulta=%r candidatos=0 contexto=0: nenhuma fonte aplicavel", consulta)
+            return []
+        vetorial = self._indice.as_retriever(similarity_top_k=LIMITE_RETRIEVER, node_ids=ids_aplicaveis).retrieve(consulta)
+        lexical = self._recuperar_bm25(consulta, _mascara_aplicaveis(self._bm25.corpus, data_atendimento))
         fundidos = fundir_rrf((("vetorial", vetorial), ("bm25", lexical)))
+        # Validação defensiva para artefatos gerados em momentos distintos.
         aplicaveis = [(no, score, origens) for no, score, origens in fundidos if _vigente(no.node.metadata, data_atendimento)]
         aplicaveis = _aplicar_precedencia(aplicaveis)
         ordenados = self._reranker.ordenar(consulta, aplicaveis)

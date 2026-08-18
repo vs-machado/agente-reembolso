@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from app.rag.retriever import RerankerOnnx, _aplicar_precedencia, _vigente, fundir_rrf
+from app.rag.retriever import RerankerOnnx, _aplicar_precedencia, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
 
 
 class TesteRetriever(unittest.TestCase):
@@ -27,6 +27,19 @@ class TesteRetriever(unittest.TestCase):
 
     def test_material_de_apoio_nunca_fundamenta_decisao(self) -> None:
         self.assertFalse(_vigente({"status": "apoio_desatualizado"}, date(2026, 1, 1)))
+
+    def test_filtros_antecipam_vigencia_e_status(self) -> None:
+        metadados = {
+            "atual": {"status": "vigente", "vigencia_inicio": "2025-01-01", "vigencia_fim": None},
+            "futuro": {"status": "vigente", "vigencia_inicio": "2027-01-01", "vigencia_fim": None},
+            "apoio": {"status": "apoio", "vigencia_inicio": None, "vigencia_fim": None},
+        }
+
+        ids = _ids_aplicaveis(metadados, date(2026, 1, 1))
+        mascara = _mascara_aplicaveis(list(metadados.values()), date(2026, 1, 1))
+
+        self.assertEqual(ids, ["atual"])
+        self.assertEqual(mascara, [1, 0, 0])
 
     def test_circular_remove_redacao_anterior_do_dispositivo_alterado(self) -> None:
         circular = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "circular", "alvos_normativos": ["ART-41"]}))
