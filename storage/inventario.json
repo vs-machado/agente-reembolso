@@ -1,149 +1,248 @@
 {
-  "gerado_em": "2026-08-18",
   "documentos": [
     {
-      "documento_id": "ANEXO-IV",
-      "tipo": "anexo",
-      "titulo": "Anexo IV - Exclusoes de Cobertura",
-      "data_publicacao": null,
-      "vigencia_inicio": null,
-      "status": "vigente",
-      "autoridade": 4,
-      "arquivo": "anexo_iv_exclusoes.pdf",
-      "chunks_pai": 4,
-      "subchunks": 12
-    },
-    {
       "documento_id": "CIRC-02-2026",
+      "arquivo": "circular_02_2026.pdf",
       "tipo": "circular",
-      "titulo": "Circular Normativa 02/2026",
+      "titulo": "Circular 02/2026",
       "data_publicacao": "2026-04-20",
       "vigencia_inicio": "2026-04-20",
+      "vigencia_fim": null,
       "status": "vigente",
       "autoridade": 2,
       "substitui_documento_id": "CIRC-11-2026",
+      "invalida_documento_id": null,
       "alvos_normativos": [
         "ART-41",
         "ART-44",
-        "ART-73",
-        "TUSS-50000462"
+        "ART-73"
       ],
-      "arquivo": "circular_02_2026.pdf",
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Circular 02/2026 SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 CIRCULAR NORMATIVA 02/2026 SaúdeMais Saúde Suplementar S.A. — Diretoria de Operações EMENTA: Revisão extraordinária dos tetos de psicoterapia, da exigência de relatório clínico e do percentual de coparticipação — dá nova redação aos arts. 41 e 44 do Regulamento Geral de Reembolso. Publicação: 20 de abril de 2026. Início de vigência: 20 de abril de 2026. Considerandos A Diretoria de Operações, no uso das atribuições qu"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 3,
       "subchunks": 7
     },
     {
       "documento_id": "CIRC-04-2025",
+      "arquivo": "circular_04_2025.pdf",
       "tipo": "circular",
-      "titulo": "Circular Normativa 04/2025",
+      "titulo": "Circular 04/2025",
       "data_publicacao": "2025-06-12",
       "vigencia_inicio": "2025-07-01",
       "vigencia_fim": "2025-10-31",
       "status": "revogado",
       "autoridade": 2,
-      "invalida_documento_id": "CIRC-09-2025",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
       "alvos_normativos": [
         "ART-12"
       ],
-      "arquivo": "circular_04_2025.pdf",
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Circular 04/2025 SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 CIRCULAR NORMATIVA 04/2025 SaúdeMais Saúde Suplementar S.A. — Diretoria de Operações EMENTA: Dá nova redação ao art. 12 do Regulamento Geral de Reembolso, que dispõe sobre o prazo para protocolar o pedido de reembolso. Publicação: 12 de junho de 2025. Início de vigência: 1º de julho de 2025. Considerandos A Diretoria de Operações, no uso das atribuições que lhe confere o art. 86 do Regulamento Geral de Reembolso, cons"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 2,
       "subchunks": 4
     },
     {
       "documento_id": "CIRC-09-2025",
+      "arquivo": "circular_09_2025.pdf",
       "tipo": "circular",
-      "titulo": "Circular Normativa 09/2025",
+      "titulo": "Circular 09/2025",
       "data_publicacao": "2025-10-20",
       "vigencia_inicio": "2025-11-01",
+      "vigencia_fim": null,
       "status": "vigente",
       "autoridade": 2,
-      "substitui_documento_id": "CIRC-04-2025",
+      "substitui_documento_id": null,
+      "invalida_documento_id": "CIRC-04-2025",
       "alvos_normativos": [
         "ART-12"
       ],
-      "arquivo": "circular_09_2025.pdf",
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Circular 09/2025 SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 CIRCULAR NORMATIVA 09/2025 SaúdeMais Saúde Suplementar S.A. — Diretoria de Operações EMENTA: Revoga a Circular Normativa 04/2025 e restabelece a redação original do art. 12 do Regulamento Geral de Reembolso. Publicação: 20 de outubro de 2025. Início de vigência: 1º de novembro de 2025. Considerandos A Diretoria de Operações, no uso das atribuições que lhe confere o art. 86 do Regulamento Geral de Reembolso, consideran"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 2,
       "subchunks": 4
     },
     {
       "documento_id": "CIRC-11-2026",
+      "arquivo": "circular_11_2026.pdf",
       "tipo": "circular",
-      "titulo": "Circular Normativa 11/2026",
+      "titulo": "Circular 11/2026",
       "data_publicacao": "2026-01-15",
       "vigencia_inicio": "2026-02-01",
       "vigencia_fim": "2026-04-19",
       "status": "substituido",
       "autoridade": 2,
-      "invalida_documento_id": "CIRC-02-2026",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
       "alvos_normativos": [
         "ART-41",
         "ART-73",
         "TUSS-50000462"
       ],
-      "arquivo": "circular_11_2026.pdf",
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Circular 11/2026 SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 CIRCULAR NORMATIVA 11/2026 SaúdeMais Saúde Suplementar S.A. — Diretoria de Operações EMENTA: Dá nova redação ao art. 41 do Regulamento Geral de Reembolso, que dispõe sobre o teto da sessão de psicoterapia individual e sobre a exigência de relatório clínico. Publicação: 15 de janeiro de 2026. Início de vigência: 1º de fevereiro de 2026. Considerandos A Diretoria de Operações, no uso das atribuições que lhe confere o ar"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 3,
       "subchunks": 7
     },
     {
-      "documento_id": "FAQ-INTERNO",
+      "documento_id": "DOC-691A57BE2F64",
+      "arquivo": "faq_interno.docx",
       "tipo": "faq",
-      "titulo": "FAQ Interno de Atendimento",
-      "data_publicacao": "2025-08-01",
+      "titulo": "Faq Interno De Atendimento",
+      "data_publicacao": null,
       "vigencia_inicio": null,
+      "vigencia_fim": null,
       "status": "apoio_desatualizado",
       "autoridade": 6,
-      "arquivo": "faq_interno.docx",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "FAQ Interno de Atendimento Reembolso por livre escolha — apoio ao time de atendimento Documento de uso interno. Última revisão consolidada: agosto de 2025. Algumas respostas ainda refletem o fluxo anterior às revisões de circulares do segundo semestre de 2025 e do início de 2026 e aguardam atualização pela área normativa. Em caso de divergência, consulte o Regulamento Geral de Reembolso e as circulares em vigor. Fluxo geral O beneficiário diz que foi ao médico e quer o dinheiro de volta. Por ond"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 6,
       "subchunks": 18
     },
     {
-      "documento_id": "MANUAL-REDE",
+      "documento_id": "DOC-DA649080C20A",
+      "arquivo": "manual_rede_credenciada.pdf",
       "tipo": "manual",
-      "titulo": "Manual da Rede Credenciada e do Reembolso",
+      "titulo": "Manual Da Rede Credenciada E Do Reembolso",
       "data_publicacao": null,
       "vigencia_inicio": null,
+      "vigencia_fim": null,
       "status": "apoio",
       "autoridade": 6,
-      "arquivo": "manual_rede_credenciada.pdf",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Manual da Rede Credenciada e do Reembolso SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 MANUAL DA REDE CREDENCIADA E DO REEMBOLSO Material de orientação ao beneficiário — SaúdeMais Saúde Suplementar S.A. Este manual reúne, em linguagem corrente, as orientações que os beneficiários dos planos Pleno e Essencial mais costumam procurar quando precisam usar a rede assistencial ou quando pagaram do próprio bolso um atendimento e querem receber parte do valor de volta. Ele não substitui"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 7,
       "subchunks": 25
     },
     {
-      "documento_id": "NT-02",
-      "tipo": "nota_tecnica",
-      "titulo": "Nota Tecnica 02",
-      "data_publicacao": null,
-      "vigencia_inicio": null,
-      "status": "vigente",
-      "autoridade": 4,
-      "arquivo": "nota_tecnica_02_documentos.pdf",
-      "chunks_pai": 8,
-      "subchunks": 23
-    },
-    {
       "documento_id": "REG-2026",
+      "arquivo": "regulamento_geral.pdf",
       "tipo": "regulamento",
-      "titulo": "Regulamento Geral de Reembolso",
-      "data_publicacao": "2025-12-31",
+      "titulo": "Regulamento Geral De Reembolso",
+      "data_publicacao": null,
       "vigencia_inicio": "2026-01-01",
+      "vigencia_fim": null,
       "status": "vigente",
       "autoridade": 3,
-      "arquivo": "regulamento_geral.pdf",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Regulamento Geral de Reembolso SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 REGULAMENTO GERAL DE REEMBOLSO SaúdeMais Saúde Suplementar S.A. — edição consolidada, exercício de 2026 Este Regulamento disciplina o reembolso de despesas assistenciais dos planos Pleno e Essencial. Suas disposições são complementadas pela Tabela URS do exercício, pelo Anexo IV, pela Nota Técnica 02 e pelas circulares normativas em vigor. Texto consolidado até 31 de dezembro de 2025; as alterações poste"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 15,
-      "subchunks": 50
+      "subchunks": 49
     },
     {
       "documento_id": "TURS-2026",
+      "arquivo": "tabela_urs_2026.pdf",
       "tipo": "tabela",
-      "titulo": "Tabela URS 2026",
-      "data_publicacao": "2026-01-01",
+      "titulo": "Tabela Urs 2026",
+      "data_publicacao": null,
       "vigencia_inicio": "2026-01-01",
       "vigencia_fim": "2026-12-31",
       "status": "vigente",
       "autoridade": 4,
-      "arquivo": "tabela_urs_2026.pdf",
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Tabela URS 2026 SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 TABELA URS 2026 SaúdeMais Saúde Suplementar S.A. — tetos de reembolso do exercício de 2026 1. Valor da Unidade de Referência de Serviços Nos termos do art. 4º do Regulamento Geral de Reembolso, o valor da Unidade de Referência de Serviços (URS) é fixado anualmente pela operadora. Para o exercício de 2026 fica estabelecido o valor de 1 URS = R$ 95,10 (um inteiro de Unidade de Referência de Serviços correspondente a R$ 9"
+        }
+      ],
+      "pendencias": [],
       "chunks_pai": 74,
       "subchunks": 229
+    }
+  ],
+  "pendentes_curadoria": [
+    {
+      "documento_id": "ANEXO-IV",
+      "arquivo": "anexo_iv_exclusoes.pdf",
+      "tipo": "anexo",
+      "titulo": "Anexo Iv — Exclusões De Cobertura",
+      "data_publicacao": null,
+      "vigencia_inicio": null,
+      "vigencia_fim": null,
+      "status": "pendente_curadoria",
+      "autoridade": 4,
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Anexo IV — Exclusões de Cobertura SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 ANEXO IV — EXCLUSÕES DE COBERTURA Parte integrante do Regulamento Geral de Reembolso — SaúdeMais Saúde Suplementar S.A. Este Anexo é parte integrante do Regulamento Geral de Reembolso, por força do seu art. 51. Verificada qualquer das hipóteses aqui relacionadas, o pedido é indeferido sem apuração de valor, prevalecendo a exclusão sobre qualquer teto, carência ou limite anual. Ao fundamentar a decisão"
+        }
+      ],
+      "pendencias": [
+        "vigencia_inicio_nao_identificada"
+      ]
+    },
+    {
+      "documento_id": "NT-02",
+      "arquivo": "nota_tecnica_02_documentos.pdf",
+      "tipo": "nota_tecnica",
+      "titulo": "Nota Técnica 02 — Documentos De Reembolso",
+      "data_publicacao": null,
+      "vigencia_inicio": null,
+      "vigencia_fim": null,
+      "status": "pendente_curadoria",
+      "autoridade": 4,
+      "substitui_documento_id": null,
+      "invalida_documento_id": null,
+      "alvos_normativos": [],
+      "evidencias": [
+        {
+          "pagina": 1,
+          "trecho": "Nota Técnica 02 — Documentos de Reembolso SaúdeMais Saúde Suplementar S.A. — documento normativo pág. 1 NOTA TÉCNICA 02 Requisitos do documento fiscal e classificação do documento de reembolso Esta Nota Técnica dá cumprimento aos arts. 73 e 74 do Regulamento Geral de Reembolso. Relaciona os campos obrigatórios do documento fiscal e estabelece a classificação prévia de que trata o art. 74. Ao fundamentar a decisão, cita-se NT-02, na forma do art. 6º, V, do Regulamento. 1. Alcance 1.1. Aplica-se a"
+        }
+      ],
+      "pendencias": [
+        "vigencia_inicio_nao_identificada"
+      ]
     }
   ],
   "excluidos": []

@@ -9,7 +9,6 @@ import json
 import re
 import shutil
 import unicodedata
-from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from typing import Iterator
@@ -22,25 +21,12 @@ from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from app.llm import criar_embeddings_llamaindex
+from ingest.catalogo import DocumentoNormativoModel, extrair_catalogo
 
 RAIZ = Path(__file__).resolve().parents[1]
 DIR_KB = RAIZ / "kb"
 DIR_STORAGE = RAIZ / "storage"
 
-# Funciona para a base fixa do desafio, mas um catálogo hardcoded não é ideal se
-# novos documentos precisarem entrar na pipeline.
-CATALOGO = {
-    "regulamento_geral.pdf": {"documento_id": "REG-2026", "tipo": "regulamento", "titulo": "Regulamento Geral de Reembolso", "data_publicacao": "2025-12-31", "vigencia_inicio": "2026-01-01", "status": "vigente", "autoridade": 3},
-    "tabela_urs_2026.pdf": {"documento_id": "TURS-2026", "tipo": "tabela", "titulo": "Tabela URS 2026", "data_publicacao": "2026-01-01", "vigencia_inicio": "2026-01-01", "vigencia_fim": "2026-12-31", "status": "vigente", "autoridade": 4},
-    "nota_tecnica_02_documentos.pdf": {"documento_id": "NT-02", "tipo": "nota_tecnica", "titulo": "Nota Tecnica 02", "data_publicacao": None, "vigencia_inicio": None, "status": "vigente", "autoridade": 4},
-    "anexo_iv_exclusoes.pdf": {"documento_id": "ANEXO-IV", "tipo": "anexo", "titulo": "Anexo IV - Exclusoes de Cobertura", "data_publicacao": None, "vigencia_inicio": None, "status": "vigente", "autoridade": 4},
-    "circular_04_2025.pdf": {"documento_id": "CIRC-04-2025", "tipo": "circular", "titulo": "Circular Normativa 04/2025", "data_publicacao": "2025-06-12", "vigencia_inicio": "2025-07-01", "vigencia_fim": "2025-10-31", "status": "revogado", "autoridade": 2, "invalida_documento_id": "CIRC-09-2025", "alvos_normativos": ["ART-12"]},
-    "circular_09_2025.pdf": {"documento_id": "CIRC-09-2025", "tipo": "circular", "titulo": "Circular Normativa 09/2025", "data_publicacao": "2025-10-20", "vigencia_inicio": "2025-11-01", "status": "vigente", "autoridade": 2, "substitui_documento_id": "CIRC-04-2025", "alvos_normativos": ["ART-12"]},
-    "circular_11_2026.pdf": {"documento_id": "CIRC-11-2026", "tipo": "circular", "titulo": "Circular Normativa 11/2026", "data_publicacao": "2026-01-15", "vigencia_inicio": "2026-02-01", "vigencia_fim": "2026-04-19", "status": "substituido", "autoridade": 2, "invalida_documento_id": "CIRC-02-2026", "alvos_normativos": ["ART-41", "ART-73", "TUSS-50000462"]},
-    "circular_02_2026.pdf": {"documento_id": "CIRC-02-2026", "tipo": "circular", "titulo": "Circular Normativa 02/2026", "data_publicacao": "2026-04-20", "vigencia_inicio": "2026-04-20", "status": "vigente", "autoridade": 2, "substitui_documento_id": "CIRC-11-2026", "alvos_normativos": ["ART-41", "ART-44", "ART-73", "TUSS-50000462"]},
-    "manual_rede_credenciada.pdf": {"documento_id": "MANUAL-REDE", "tipo": "manual", "titulo": "Manual da Rede Credenciada e do Reembolso", "data_publicacao": None, "vigencia_inicio": None, "status": "apoio", "autoridade": 6},
-    "faq_interno.docx": {"documento_id": "FAQ-INTERNO", "tipo": "faq", "titulo": "FAQ Interno de Atendimento", "data_publicacao": "2025-08-01", "vigencia_inicio": None, "status": "apoio_desatualizado", "autoridade": 6},
-}
 
 
 def _normalizar(texto: str) -> str:
@@ -67,7 +53,7 @@ def _blocos_pdf(caminho: Path) -> Iterator[tuple[int, str, str]]:
         texto = _normalizar(pagina.get_text())
         if not texto:
             continue
-        partes = re.split(r"(?=(?:Art\.\s*\d+|§\s*\d+|\d+(?:\.\d+)*\.\s|T[IÍ]TULO|CAP[IÍ]TULO)\b)", texto, flags=re.IGNORECASE)
+        partes = re.split(r"(?=(?:Art\.\s*\d+|§\s*\d+|(?<![Aa]rt\. )(?<!\d)\d+(?:\.\d+)*\.\s|T[IÍ]TULO|CAP[IÍ]TULO)\b)", texto, flags=re.IGNORECASE)
         for indice, parte in enumerate(partes):
             parte = parte.strip()
             if parte:
@@ -90,21 +76,24 @@ def _extrair(caminho: Path) -> Iterator[tuple[int, str, str]]:
         yield from _blocos_docx(caminho)
 
 
-def _metadados(caminho: Path, pagina: int, estrutural: str) -> dict:
-    dados = dict(CATALOGO[caminho.name])
-    for campo in ("data_publicacao", "vigencia_inicio", "vigencia_fim", "substitui_documento_id", "invalida_documento_id"):
-        dados.setdefault(campo, None)
-    dados.update({"arquivo_origem": caminho.name, "pagina": pagina, "caminho_estrutural": estrutural})
+def _metadados(documento: DocumentoNormativoModel, pagina: int, estrutural: str) -> dict:
+    dados = documento.model_dump(mode="json")
+    dados.update({"arquivo_origem": documento.arquivo, "pagina": pagina, "caminho_estrutural": estrutural})
     return dados
 
 
 def _criar_nos() -> tuple[list[TextNode], list[dict], dict]:
     subchunks: list[TextNode] = []
     pais: list[dict] = []
-    inventario: dict = {"gerado_em": date.today().isoformat(), "documentos": [], "excluidos": []}
+    catalogo = {documento.arquivo: documento for documento in extrair_catalogo(DIR_KB)}
+    inventario: dict = {"documentos": [], "pendentes_curadoria": [], "excluidos": []}
     for caminho in sorted(DIR_KB.iterdir()):
-        if caminho.name not in CATALOGO:
+        if caminho.name not in catalogo:
             inventario["excluidos"].append({"arquivo": caminho.name, "motivo": "sem catalogo"})
+            continue
+        documento = catalogo[caminho.name]
+        if documento.status == "pendente_curadoria":
+            inventario["pendentes_curadoria"].append(documento.model_dump(mode="json"))
             continue
         quantidade_pais = quantidade_subchunks = 0
         blocos = list(_extrair(caminho))
@@ -127,7 +116,7 @@ def _criar_nos() -> tuple[list[TextNode], list[dict], dict]:
             grupos.append((pagina_atual, caminho_atual, " ".join(atual)))
         for pagina, estrutural, bloco in grupos:
             for indice_pai, conteudo in enumerate(_dividir(bloco, 650, 80), start=1):
-                meta = _metadados(caminho, pagina, estrutural)
+                meta = _metadados(documento, pagina, estrutural)
                 pai_id = sha256(f"{caminho.name}|{pagina}|{estrutural}|{indice_pai}".encode()).hexdigest()[:20]
                 meta["referencias_normativas"] = sorted(set(re.findall(r"(?:art\.\s*(\d+)|\b(TUSS-\d+)\b)", conteudo, flags=re.IGNORECASE)))
                 meta["referencias_normativas"] = [f"ART-{artigo}" if artigo else codigo.upper() for artigo, codigo in meta["referencias_normativas"]]
@@ -139,7 +128,7 @@ def _criar_nos() -> tuple[list[TextNode], list[dict], dict]:
                     texto_indexado = f"{meta['titulo']} | {estrutural} | {trecho}"
                     subchunks.append(TextNode(id_=sub_id, text=texto_indexado, metadata={**meta, "chunk_pai_id": pai_id, "subchunk_id": sub_id}))
                     quantidade_subchunks += 1
-        inventario["documentos"].append({**CATALOGO[caminho.name], "arquivo": caminho.name, "chunks_pai": quantidade_pais, "subchunks": quantidade_subchunks})
+        inventario["documentos"].append({**documento.model_dump(mode="json"), "chunks_pai": quantidade_pais, "subchunks": quantidade_subchunks})
     return subchunks, pais, inventario
 
 
@@ -165,7 +154,7 @@ def main() -> int:
     shutil.rmtree(DIR_STORAGE, ignore_errors=True)
 
     temporario.replace(DIR_STORAGE)
-    print(json.dumps({"documentos": len(inventario["documentos"]), "chunks_pai": len(pais), "subchunks": len(subchunks), "excluidos": len(inventario["excluidos"])}, ensure_ascii=False))
+    print(json.dumps({"documentos": len(inventario["documentos"]), "pendentes_curadoria": len(inventario["pendentes_curadoria"]), "chunks_pai": len(pais), "subchunks": len(subchunks), "excluidos": len(inventario["excluidos"])}, ensure_ascii=False))
     
     return 0
 
