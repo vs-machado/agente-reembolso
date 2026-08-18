@@ -40,6 +40,8 @@ google-genai==2.17.0
 # se preferir FAISS ou Chroma, acrescente aqui — servidor separado é proibido.
 llama-index-core==0.14.23
 llama-index-retrievers-bm25==0.7.1
+onnxruntime==1.23.2
+tokenizers==0.22.2
 #   faiss-cpu==1.13.0
 #   chromadb==1.4.1
 
