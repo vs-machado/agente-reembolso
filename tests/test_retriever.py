@@ -4,7 +4,9 @@ from datetime import date
 from types import SimpleNamespace
 import unittest
 
-from app.rag.retriever import _aplicar_precedencia, _vigente, fundir_rrf
+import numpy as np
+
+from app.rag.retriever import RerankerOnnx, _aplicar_precedencia, _vigente, fundir_rrf
 
 
 class TesteRetriever(unittest.TestCase):
@@ -33,3 +35,34 @@ class TesteRetriever(unittest.TestCase):
         resultado = _aplicar_precedencia([(circular, 1, ("bm25",)), (regulamento, 0.5, ("vetorial",))])
 
         self.assertEqual([item[0] for item in resultado], [circular])
+
+    def test_reranker_reordena_candidatos_em_lote(self) -> None:
+        class TokenizerFalso:
+            def encode(self, *_args):
+                return SimpleNamespace(ids=[1, 2], attention_mask=[1, 1], type_ids=[0, 0])
+
+        class SessaoFalsa:
+            def get_inputs(self):
+                return []
+
+            def run(self, _saidas, entradas):
+                self.entradas = entradas
+                return [np.array([[0.1], [0.9]])]
+
+        primeiro = SimpleNamespace(node=SimpleNamespace(get_content=lambda: "primeiro"))
+        segundo = SimpleNamespace(node=SimpleNamespace(get_content=lambda: "segundo"))
+        reranker = RerankerOnnx.__new__(RerankerOnnx)
+        reranker._tokenizer = TokenizerFalso()
+        reranker._sessao = SessaoFalsa()
+
+        resultado = reranker.ordenar("consulta", [(primeiro, 0.2, ("bm25",)), (segundo, 0.1, ("vetorial",))])
+
+        self.assertEqual([item[0] for item in resultado], [segundo, primeiro])
+        self.assertEqual(reranker._sessao.entradas["input_ids"].shape, (2, 2))
+
+    def test_reranker_aceita_lista_vazia(self) -> None:
+        reranker = RerankerOnnx.__new__(RerankerOnnx)
+        reranker._tokenizer = object()
+        reranker._sessao = object()
+
+        self.assertEqual(reranker.ordenar("consulta", []), [])

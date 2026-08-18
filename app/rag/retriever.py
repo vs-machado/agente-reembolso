@@ -18,6 +18,7 @@ LOG = logging.getLogger(__name__)
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_STORAGE = RAIZ / "storage"
 LIMITE_RETRIEVER = 30
+LIMITE_TOKENS_RERANKER = 256
 
 
 @dataclass(frozen=True)
@@ -77,38 +78,47 @@ def _aplicar_precedencia(candidatos: list[tuple[object, float, tuple[str, ...]]]
 
 
 class RerankerOnnx:
-    """Cross-encoder local; os pesos devem existir em ``storage/reranker``."""
+    """Cross-encoder local INT8; os artefatos residem em ``storage/reranker``."""
 
     def __init__(self, diretorio: Path) -> None:
         self._sessao = None
         self._tokenizer = None
-        modelo = diretorio / "model.onnx"
+        modelo = diretorio / "model.int8.onnx"
         tokenizer = diretorio / "tokenizer.json"
-        if modelo.exists() and tokenizer.exists():
-            import onnxruntime
-            from tokenizers import Tokenizer
+        if not modelo.exists() or not tokenizer.exists():
+            # O RRF continua utilizável quando a imagem não contém o modelo.
+            LOG.warning("reranker indisponivel: faltam artefatos em %s", diretorio)
+            return
 
-            self._sessao = onnxruntime.InferenceSession(str(modelo), providers=["CPUExecutionProvider"])
-            self._tokenizer = Tokenizer.from_file(str(tokenizer))
+        import onnxruntime
+        from tokenizers import Tokenizer
+
+        self._sessao = onnxruntime.InferenceSession(str(modelo), providers=["CPUExecutionProvider"])
+        self._tokenizer = Tokenizer.from_file(str(tokenizer))
+        # O modelo foi quantizado para a janela fixa usada na inferência em lote.
+        self._tokenizer.enable_truncation(max_length=LIMITE_TOKENS_RERANKER)
+        self._tokenizer.enable_padding(length=LIMITE_TOKENS_RERANKER)
 
     @property
     def disponivel(self) -> bool:
         return self._sessao is not None
 
     def ordenar(self, consulta: str, candidatos: list[tuple[object, float, tuple[str, ...]]]) -> list[tuple[object, float, tuple[str, ...]]]:
-        if not self._sessao or not self._tokenizer:
+        if not candidatos or not self._sessao or not self._tokenizer:
             return candidatos
         import numpy as np
 
-        pontuados = []
-        for no, score, origens in candidatos:
-            codificado = self._tokenizer.encode(consulta, no.node.get_content())
-            codificado.pad(256)
-            entradas = {"input_ids": np.array([codificado.ids], dtype=np.int64), "attention_mask": np.array([codificado.attention_mask], dtype=np.int64)}
-            if any(item.name == "token_type_ids" for item in self._sessao.get_inputs()):
-                entradas["token_type_ids"] = np.array([codificado.type_ids], dtype=np.int64)
-            saida = self._sessao.run(None, entradas)[0]
-            pontuados.append((no, float(np.squeeze(saida)), origens))
+        codificados = [self._tokenizer.encode(consulta, no.node.get_content()) for no, _, _ in candidatos]
+        entradas = {
+            "input_ids": np.array([item.ids for item in codificados], dtype=np.int64),
+            "attention_mask": np.array([item.attention_mask for item in codificados], dtype=np.int64),
+        }
+        # XLM-R não usa segmentos, mas o reranker aceita modelos que os declarem.
+        if any(item.name == "token_type_ids" for item in self._sessao.get_inputs()):
+            entradas["token_type_ids"] = np.array([item.type_ids for item in codificados], dtype=np.int64)
+        scores = self._sessao.run(None, entradas)[0].reshape(-1)
+        # Após a fusão RRF, o cross-encoder decide a ordem sem alterar as origens.
+        pontuados = [(no, float(score), origens) for (no, _, origens), score in zip(candidatos, scores, strict=True)]
         return sorted(pontuados, key=lambda item: item[1], reverse=True)
 
 
