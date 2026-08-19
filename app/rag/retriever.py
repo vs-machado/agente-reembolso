@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -12,8 +12,9 @@ from typing import Iterable
 from llama_index.core import StorageContext, load_index_from_storage
 from llama_index.core.indices.vector_store.retrievers import VectorIndexRetriever
 from llama_index.retrievers.bm25 import BM25Retriever
+from pydantic import BaseModel, Field
 
-from app.llm import criar_embeddings_llamaindex
+from app.llm import criar_embeddings_llamaindex, criar_llm
 
 LOG = logging.getLogger(__name__)
 RAIZ = Path(__file__).resolve().parents[2]
@@ -29,6 +30,18 @@ class FonteModel:
     metadados: dict
     score: float
     origens: tuple[str, ...]
+    score_llm: int | None = None
+
+
+class PontuacaoRelevanciaModel(BaseModel):
+    indice_fonte: int = Field(ge=1)
+    relevante: bool
+    score: int = Field(ge=0, le=100)
+
+
+class AvaliacaoRelevanciaModel(BaseModel):
+    ha_fonte_suficiente: bool
+    pontuacoes: list[PontuacaoRelevanciaModel]
 
 
 def fundir_rrf(resultados: Iterable[tuple[str, list]], constante: int = 60) -> list[tuple[object, float, tuple[str, ...]]]:
@@ -117,14 +130,57 @@ class RerankerOnnx:
         return sorted(pontuados, key=lambda item: item[1], reverse=True)
 
 
+class RelevanciaReranker:
+    """Valida a relevância dos chunks finais sem introduzir novas fontes."""
+
+    def __init__(self, llm=None) -> None:
+        self._llm = llm or criar_llm()
+
+    def ordenar(self, consulta: str, fontes: list[FonteModel]) -> list[FonteModel]:
+        if not fontes:
+            return []
+        candidatos = "\n\n".join(
+            f"FONTE {indice}\nCitação: {fonte.citacao}\nTrecho: {fonte.texto}"
+            for indice, fonte in enumerate(fontes, start=1)
+        )
+        instrucao = (
+            "Avalie se cada fonte responde materialmente à consulta. Use apenas os "
+            "trechos fornecidos: não crie regras, fatos ou citações. Considere uma "
+            "fonte relevante somente se ela puder fundamentar ao menos parte da "
+            "resposta. Marque ha_fonte_suficiente como falso somente se nenhuma "
+            "fonte for materialmente relevante, mesmo que uma fonte relevante nao "
+            "resolva todos os aspectos da consulta. "
+            f"\n\nCONSULTA\n{consulta}\n\nCANDIDATOS\n{candidatos}"
+        )
+        try:
+            avaliacao = self._llm.with_structured_output(AvaliacaoRelevanciaModel).invoke(instrucao)
+        except Exception:
+            LOG.exception("reranker LLM indisponível")
+            return []
+        if not avaliacao.ha_fonte_suficiente:
+            return []
+        pontuacoes = {
+            item.indice_fonte: item
+            for item in avaliacao.pontuacoes
+            if item.relevante and item.indice_fonte <= len(fontes)
+        }
+        pontuadas = [
+            replace(fonte, score_llm=pontuacoes[indice].score)
+            for indice, fonte in enumerate(fontes, start=1)
+            if indice in pontuacoes
+        ]
+        return sorted(pontuadas, key=lambda fonte: fonte.score_llm or 0, reverse=True)
+
+
 class RetrieverHibrido:
-    def __init__(self, diretorio: Path = DIR_STORAGE) -> None:
+    def __init__(self, diretorio: Path = DIR_STORAGE, reranker_relevancia: RelevanciaReranker | None = None) -> None:
         contexto = StorageContext.from_defaults(persist_dir=str(diretorio / "vetorial"))
         self._indice = load_index_from_storage(contexto, embed_model=criar_embeddings_llamaindex())
         self._bm25 = BM25Retriever.from_persist_dir(str(diretorio / "bm25"))
         self._bm25.similarity_top_k = LIMITE_RETRIEVER
         self._pais = {item["chunk_pai_id"]: item for item in json.loads((diretorio / "chunks_pai.json").read_text(encoding="utf-8"))}
         self._reranker = RerankerOnnx(diretorio / "reranker")
+        self._reranker_llm = reranker_relevancia
 
     def _recuperar_bm25(self, consulta: str, mascara: list[int]) -> list:
         """Cria uma visão filtrada do índice BM25 sem reindexar o corpus."""
@@ -138,8 +194,18 @@ class RetrieverHibrido:
         )
         return retriever.retrieve(consulta)
 
-    def recuperar(self, consulta: str, data_atendimento: date | None = None, limite: int = 8) -> list[FonteModel]:
-        """Retorna chunks-pai normativos, deduplicados e rastreáveis."""
+    def recuperar(self, consulta: str, data_atendimento: date | None = None, limite: int = 8, validar_relevancia: bool = False) -> list[FonteModel]:
+        """Retorna chunks-pai normativos, deduplicados e rastreaveis.
+
+        Args:
+            consulta: Pergunta normativa usada nas buscas vetorial e lexical.
+            data_atendimento: Data-fato para filtrar fontes por vigencia.
+            limite: Quantidade de chunks-pai retornados, entre 6 e 10.
+            validar_relevancia: Quando verdadeiro, usa a LLM para remover fontes
+                sem relacao material com a consulta apos o reranker ONNX. Use
+                apenas ao preparar uma decisao normativa; o caminho padrao evita
+                essa chamada adicional e retorna o ranking local.
+        """
         metadados_vetoriais = self._indice.vector_store.data.metadata_dict
         ids_aplicaveis = _ids_aplicaveis(metadados_vetoriais, data_atendimento)
         if not ids_aplicaveis:
@@ -168,5 +234,8 @@ class RetrieverHibrido:
             pais_usados.add(pai_id)
             if len(selecionados) == min(max(limite, 6), 10):
                 break
-        LOG.info("rag consulta=%r candidatos=%d contexto=%d reranker=%s", consulta, len(fundidos), len(selecionados), self._reranker.disponivel)
+        if validar_relevancia:
+            self._reranker_llm = self._reranker_llm or RelevanciaReranker()
+            selecionados = self._reranker_llm.ordenar(consulta, selecionados)
+        LOG.info("rag consulta=%r candidatos=%d contexto=%d reranker=%s reranker_llm=%s", consulta, len(fundidos), len(selecionados), self._reranker.disponivel, validar_relevancia)
         return selecionados

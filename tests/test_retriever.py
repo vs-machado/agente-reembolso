@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 
-from app.rag.retriever import RerankerOnnx, RetrieverHibrido, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
+from app.rag.retriever import AvaliacaoRelevanciaModel, FonteModel, RelevanciaReranker, RerankerOnnx, RetrieverHibrido, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
 
 
 class TesteRetriever(unittest.TestCase):
@@ -87,3 +87,67 @@ class TesteRetriever(unittest.TestCase):
         self.assertTrue(fontes)
         self.assertTrue(all(fonte.citacao for fonte in fontes))
         self.assertTrue(all(fonte.metadados["pagina"] for fonte in fontes))
+
+    def test_reranker_llm_so_e_acionado_quando_solicitado(self) -> None:
+        class RerankerFalso:
+            def __init__(self) -> None:
+                self.chamadas = 0
+
+            def ordenar(self, _consulta, fontes):
+                self.chamadas += 1
+                return fontes
+
+        reranker = RerankerFalso()
+        with patch("app.rag.retriever.criar_embeddings_llamaindex", return_value=MockEmbedding(embed_dim=1536)):
+            recuperador = RetrieverHibrido(reranker_relevancia=reranker)
+            recuperador.recuperar("Qual e o valor de uma URS em 2026?", date(2026, 6, 10))
+            self.assertEqual(reranker.chamadas, 0)
+
+            recuperador.recuperar(
+                "Qual e o valor de uma URS em 2026?",
+                date(2026, 6, 10),
+                validar_relevancia=True,
+            )
+
+        self.assertEqual(reranker.chamadas, 1)
+
+    def test_reranker_llm_ordena_e_preserva_score_onnx(self) -> None:
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _instrucao):
+                return AvaliacaoRelevanciaModel.model_validate(
+                    {
+                        "ha_fonte_suficiente": True,
+                        "pontuacoes": [
+                            {"indice_fonte": 1, "relevante": True, "score": 30},
+                            {"indice_fonte": 2, "relevante": True, "score": 90},
+                        ],
+                    }
+                )
+
+        fontes = [
+            FonteModel("primeira", "Fonte 1", {}, 0.8, ("vetorial",)),
+            FonteModel("segunda", "Fonte 2", {}, 0.2, ("bm25",)),
+        ]
+
+        resultado = RelevanciaReranker(LlmFalso()).ordenar("consulta", fontes)
+
+        self.assertEqual([fonte.texto for fonte in resultado], ["segunda", "primeira"])
+        self.assertEqual([fonte.score for fonte in resultado], [0.2, 0.8])
+        self.assertEqual([fonte.score_llm for fonte in resultado], [90, 30])
+
+    def test_reranker_llm_remove_contexto_sem_fonte_suficiente(self) -> None:
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _instrucao):
+                return AvaliacaoRelevanciaModel.model_validate(
+                    {"ha_fonte_suficiente": False, "pontuacoes": []}
+                )
+
+        fontes = [FonteModel("trecho", "Fonte", {}, 0.8, ("vetorial",))]
+
+        self.assertEqual(RelevanciaReranker(LlmFalso()).ordenar("consulta", fontes), [])
