@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from app.rag.retriever import RerankerOnnx, _aplicar_precedencia, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
+from app.rag.retriever import RerankerOnnx, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
 
 
 class TesteRetriever(unittest.TestCase):
@@ -43,23 +43,6 @@ class TesteRetriever(unittest.TestCase):
 
         self.assertEqual(ids, ["atual"])
         self.assertEqual(mascara, [1, 0, 0])
-
-    def test_circular_remove_redacao_anterior_do_dispositivo_alterado(self) -> None:
-        circular = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "circular", "alvos_normativos": ["ART-41"]}))
-        regulamento = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "regulamento", "referencias_normativas": ["ART-41"]}))
-
-        resultado = _aplicar_precedencia([(circular, 1, ("bm25",)), (regulamento, 0.5, ("vetorial",))])
-
-        self.assertEqual([item[0] for item in resultado], [circular])
-
-    def test_circular_preserva_dispositivo_nao_alterado_do_artigo(self) -> None:
-        circular = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "circular", "alvos_normativos": ["ART-41-PAR-2"]}))
-        caput = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "regulamento", "referencias_normativas": ["ART-41", "ART-41-CAPUT"]}))
-        paragrafo = SimpleNamespace(node=SimpleNamespace(metadata={"tipo": "regulamento", "referencias_normativas": ["ART-41", "ART-41-PAR-2"]}))
-
-        resultado = _aplicar_precedencia([(circular, 1, ("bm25",)), (caput, 0.5, ("vetorial",)), (paragrafo, 0.4, ("vetorial",))])
-
-        self.assertEqual([item[0] for item in resultado], [circular, caput])
 
     def test_reranker_reordena_candidatos_em_lote(self) -> None:
         class TokenizerFalso:

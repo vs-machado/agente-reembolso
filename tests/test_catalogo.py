@@ -34,12 +34,16 @@ class TesteCatalogo(unittest.TestCase):
 
         self.assertEqual(alvos, ["ART-41-CAPUT", "ART-73-PAR-3"])
 
+    def test_extrai_alvos_com_marcadores_corrompidos_do_pdf(self) -> None:
+        alvos = _alvos("O caput e os �� 1� e 2� do art. 41 passam a vigorar. O � 3� do art. 73 passa a vigorar.", "circular")
+
+        self.assertEqual(alvos, ["ART-41-CAPUT", "ART-41-PAR-1", "ART-41-PAR-2", "ART-73-PAR-3"])
+
     def test_normaliza_referencias_estruturais(self) -> None:
         referencias = extrair_referencias_normativas(
             "TÍTULO VII. Capítulo II. Seção 3. Art. 73. § 3º. "
             "Anexo IV, item 11.3. Nota Técnica 02. Código TUSS-50000462."
         )
-
         self.assertEqual(
             referencias,
             [
@@ -54,6 +58,11 @@ class TesteCatalogo(unittest.TestCase):
                 "TUSS-50000462",
             ],
         )
+
+    def test_reconhece_paragrafo_com_contexto_do_artigo(self) -> None:
+        referencias = extrair_referencias_normativas("pagina 1, bloco 3, Art. 41: § 2º O limite aplica-se.")
+
+        self.assertIn("ART-41-PAR-2", referencias)
 
     def test_extrai_artigo_restabelecido_por_circular(self) -> None:
         alvos = _alvos("Fica restabelecida a redação original do art. 12. O restabelecimento não altera o art. 2.", "circular")

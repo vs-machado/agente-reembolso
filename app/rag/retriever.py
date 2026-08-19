@@ -71,22 +71,6 @@ def _mascara_aplicaveis(corpus: list[dict], referencia: date | None) -> list[int
     return [int(_vigente(metadados, referencia)) for metadados in corpus]
 
 
-def _aplicar_precedencia(candidatos: list[tuple[object, float, tuple[str, ...]]]) -> list[tuple[object, float, tuple[str, ...]]]:
-    """Remove a redação anterior somente nos dispositivos alcançados por circular."""
-    alvos = {
-        alvo
-        for no, _, _ in candidatos
-        if no.node.metadata.get("tipo") == "circular"
-        for alvo in no.node.metadata.get("alvos_normativos", [])
-    }
-    return [
-        candidato
-        for candidato in candidatos
-        if candidato[0].node.metadata.get("tipo") == "circular"
-        or not (set(candidato[0].node.metadata.get("referencias_normativas", [])) & alvos)
-    ]
-
-
 class RerankerOnnx:
     """Cross-encoder local INT8; os artefatos residem em ``storage/reranker``."""
 
@@ -165,7 +149,6 @@ class RetrieverHibrido:
         fundidos = fundir_rrf((("vetorial", vetorial), ("bm25", lexical)))
         # Validação defensiva para artefatos gerados em momentos distintos.
         aplicaveis = [(no, score, origens) for no, score, origens in fundidos if _vigente(no.node.metadata, data_atendimento)]
-        aplicaveis = _aplicar_precedencia(aplicaveis)
         ordenados = self._reranker.ordenar(consulta, aplicaveis)
         selecionados: list[FonteModel] = []
         pais_usados: set[str] = set()

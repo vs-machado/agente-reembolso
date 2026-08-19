@@ -160,9 +160,14 @@ def _alvos(texto: str, tipo: TipoDocumento) -> list[str]:
         if artigos:
             alvos.add(f"ART-{artigos[-1]}")
     alvos.update(f"ART-{numero}" for numero in re.findall(r"restabelecida\s+a\s+redacao\s+original\s+do\s+art\.\s*(\d+)", normalizado))
-    for caput, paragrafo, unico, artigo in re.findall(r"(?:(caput)|[§�]\s*(\d+)(?:º|o|�)?|(paragrafo\s+unico))\s+do\s+art\.?\s*(\d+).*?passa\s+a\s+vigorar", normalizado):
+    for caput, paragrafo, unico, artigo in re.findall(r"(?:(caput)|[§\ufffd]+\s*(\d+)(?:º|o|\ufffd)?|(paragrafo\s+unico))\s+do\s+art\.?\s*(\d+).*?passa\s+a\s+vigorar", normalizado, flags=re.DOTALL):
         sufixo = "CAPUT" if caput else f"PAR-{paragrafo}" if paragrafo else "PAR-UNICO"
         alvos.add(f"ART-{artigo}-{sufixo}")
+    for dispositivos, artigo in re.findall(r"([^.]{0,100})\s+do\s+art\.?\s*(\d+)[^.]{0,100}?passam?\s+a\s+vigorar", normalizado):
+        if "caput" in dispositivos:
+            alvos.add(f"ART-{artigo}-CAPUT")
+        for grupo in re.findall(r"[§\ufffd]+\s*(\d+(?:º|o|\ufffd)?(?:\s*(?:e|,)\s*\d+(?:º|o|\ufffd)?)*)", dispositivos):
+            alvos.update(f"ART-{artigo}-PAR-{numero}" for numero in re.findall(r"\d+", grupo))
     for item, anexo in re.findall(r"item\s+(\d+(?:\.\d+)*)\s+do\s+anexo\s+([ivxlcdm]+|[a-z])[^.]{0,250}?passa\s+a\s+vigorar", normalizado):
         alvos.add(f"ANEXO-{anexo.upper()}-ITEM-{item}")
     for parametro, chave in ((r"valor\s+da\s+urs", "PARAM-VALOR-URS"), (r"percentual\s+de\s+coparticipacao", "PARAM-COPARTICIPACAO")):
@@ -195,7 +200,7 @@ def extrair_referencias_normativas(texto: str) -> list[str]:
 
     for artigo in re.findall(r"art\.\s*(\d+)", normalizado):
         referencias.add(f"ART-{artigo}")
-    for paragrafo, artigo in re.findall(r"§\s*(\d+)\s+do\s+art\.\s*(\d+)", normalizado):
+    for paragrafo, artigo in re.findall(r"[§\ufffd]+\s*(\d+)\s+do\s+art\.\s*(\d+)", normalizado):
         referencias.add(f"ART-{artigo}-PAR-{paragrafo}")
     for artigo in re.findall(r"caput\s+do\s+art\.\s*(\d+)", normalizado):
         referencias.add(f"ART-{artigo}-CAPUT")
@@ -207,11 +212,13 @@ def extrair_referencias_normativas(texto: str) -> list[str]:
         referencias.add(f"ART-{artigo}-AL-{alinea.upper()}")
 
     # Dispositivos próprios podem mencionar parágrafos sem repetir o artigo.
-    for trecho in re.split(r"(?=Art\.\s*\d+)", texto):
-        artigo = re.match(r"Art\.\s*(\d+)", trecho)
+    for trecho in re.split(r"(?=art\.\s*\d+)", normalizado):
+        artigo = re.match(r"art\.\s*(\d+)", trecho)
         if not artigo:
             continue
-        referencias.update(f"ART-{artigo.group(1)}-PAR-{numero}" for numero in re.findall(r"§\s*(\d+)", trecho))
+        referencias.update(f"ART-{artigo.group(1)}-PAR-{numero}" for numero in re.findall(r"[§\ufffd]+\s*(\d+)", trecho))
+        if re.search(r"\bcaput\b", _sem_acentos(trecho)):
+            referencias.add(f"ART-{artigo.group(1)}-CAPUT")
         if re.search(r"paragrafo unico", _sem_acentos(trecho)):
             referencias.add(f"ART-{artigo.group(1)}-PAR-UNICO")
 
