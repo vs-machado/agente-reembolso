@@ -52,7 +52,7 @@ def fundir_rrf(resultados: Iterable[tuple[str, list]], constante: int = 60) -> l
 
 
 def _vigente(metadados: dict, referencia: date | None) -> bool:
-    if metadados.get("status") in {"apoio", "apoio_desatualizado"}:
+    if metadados.get("status") not in {"vigente", "revogado", "substituido"}:
         return False
     if referencia is None:
         return metadados.get("status") == "vigente"

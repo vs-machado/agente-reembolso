@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 import unittest
 
-from ingest.catalogo import DocumentoNormativoModel, _alvos, _datas, extrair_referencias_normativas
+from ingest.catalogo import DocumentoNormativoModel, _alvos, _datas, extrair_documento, extrair_referencias_normativas
 
 
 class TesteCatalogo(unittest.TestCase):
@@ -12,6 +13,21 @@ class TesteCatalogo(unittest.TestCase):
 
         self.assertEqual(inicio, date(2026, 1, 1))
         self.assertEqual(fim, date(2026, 12, 31))
+
+    def test_extrai_data_de_publicacao_sem_vigencia(self) -> None:
+        publicacao, inicio, fim = _datas("Publicado em 22 de dezembro de 2025.", "anexo")
+
+        self.assertEqual(publicacao, date(2025, 12, 22))
+        self.assertIsNone(inicio)
+        self.assertIsNone(fim)
+
+    def test_define_vigencia_curada_para_anexo_e_nota_tecnica(self) -> None:
+        raiz = Path(__file__).resolve().parents[1] / "kb"
+
+        for arquivo in ("anexo_iv_exclusoes.pdf", "nota_tecnica_02_documentos.pdf"):
+            documento = extrair_documento(raiz / arquivo)
+            self.assertEqual(documento.vigencia_inicio, date(2025, 12, 22))
+            self.assertEqual(documento.status, "vigente")
 
     def test_extrai_alvos_de_circular(self) -> None:
         alvos = _alvos("O caput do art. 41 passa a vigorar com nova redação. O § 3º do art. 73 passa a vigorar.", "circular")

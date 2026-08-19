@@ -28,6 +28,9 @@ class TesteRetriever(unittest.TestCase):
     def test_material_de_apoio_nunca_fundamenta_decisao(self) -> None:
         self.assertFalse(_vigente({"status": "apoio_desatualizado"}, date(2026, 1, 1)))
 
+    def test_documento_pendente_de_curadoria_nao_e_recuperado(self) -> None:
+        self.assertFalse(_vigente({"status": "pendente_curadoria"}, date(2026, 1, 1)))
+
     def test_filtros_antecipam_vigencia_e_status(self) -> None:
         metadados = {
             "atual": {"status": "vigente", "vigencia_inicio": "2025-01-01", "vigencia_fim": None},

@@ -24,6 +24,10 @@ MESES = {"janeiro": 1, "fevereiro": 2, "marco": 3, "abril": 4, "maio": 5, "junho
 # materiais de apoio e nunca fundamentam decisões autônomas.
 AUTORIDADES = {"circular": 2, "regulamento": 3, "tabela": 4, "nota_tecnica": 4, "anexo": 4, "manual": 6, "faq": 6}
 
+# Decisão de curadoria: estes documentos publicados em 22/12/2025 integram o
+# Regulamento de 2026; como não declaram vigência, ela foi fixada na publicação.
+DOCUMENTOS_COM_VIGENCIA_NA_PUBLICACAO = {"ANEXO-IV", "NT-02"}
+
 
 class EvidenciaModel(BaseModel):
     pagina: int = Field(ge=1)
@@ -126,7 +130,8 @@ def _identificador(tipo: TipoDocumento, texto: str, caminho: Path) -> str:
 
 def _datas(texto: str, tipo: TipoDocumento) -> tuple[date | None, date | None, date | None]:
     normalizado = _sem_acentos(texto)
-    publicacao = _data_por_extenso(re.search(r"publicacao\s*:\s*([^\n.]+)", normalizado).group(1)) if re.search(r"publicacao\s*:\s*([^\n.]+)", normalizado) else None
+    publicacao_encontrada = re.search(r"publica(?:cao|do|da)\s*(?::|em)\s*([^\n.]+)", normalizado)
+    publicacao = _data_por_extenso(publicacao_encontrada.group(1)) if publicacao_encontrada else None
     inicio = _data_por_extenso(re.search(r"inicio de vigencia\s*:\s*([^\n.]+)", normalizado).group(1)) if re.search(r"inicio de vigencia\s*:\s*([^\n.]+)", normalizado) else None
     periodo = re.search(r"entre\s+(\d{1,2}(?:º|o)?\s+de\s+\w+\s+de\s+20\d{2})\s+e\s+(\d{1,2}(?:º|o)?\s+de\s+\w+\s+de\s+20\d{2})", normalizado)
     if periodo:
@@ -218,6 +223,9 @@ def extrair_documento(caminho: Path) -> DocumentoNormativoModel:
     texto = "\n".join(paginas)
     tipo = _tipo(texto)
     publicacao, inicio, fim = _datas(texto, tipo)
+    documento_id = _identificador(tipo, texto, caminho)
+    if documento_id in DOCUMENTOS_COM_VIGENCIA_NA_PUBLICACAO and inicio is None:
+        inicio = publicacao
     normalizado = _sem_acentos(texto)
     if tipo == "faq":
         status: StatusDocumento = "apoio_desatualizado" if "desatualiz" in normalizado else "apoio"
@@ -234,7 +242,7 @@ def extrair_documento(caminho: Path) -> DocumentoNormativoModel:
         pendencias.append("vigencia_inicio_nao_identificada")
     evidencia = EvidenciaModel(pagina=1, trecho=re.sub(r"\s+", " ", texto[:500]).strip()) if texto else None
     return DocumentoNormativoModel(
-        documento_id=_identificador(tipo, texto, caminho), arquivo=caminho.name, tipo=tipo,
+        documento_id=documento_id, arquivo=caminho.name, tipo=tipo,
         titulo=_titulo(texto, caminho), data_publicacao=publicacao, vigencia_inicio=inicio,
         vigencia_fim=fim, status=status, autoridade=AUTORIDADES.get(tipo),
         alvos_normativos=_alvos(texto, tipo), evidencias=[evidencia] if evidencia else [], pendencias=pendencias,
@@ -254,9 +262,9 @@ def extrair_catalogo(diretorio: Path) -> list[DocumentoNormativoModel]:
             if re.search(rf"revoga[^.]*circular(?: normativa)?\s+0?{int(numero)}\s*/\s*{ano}", texto):
                 documento.invalida_documento_id = alvo_id
                 alvo.status = "revogado"
-            elif "redacao dada pela circular" in texto or "prevalece sobre ela" in texto:
-                documento.substitui_documento_id = alvo_id
-                alvo.status = "substituido"
+            # Uma circular pode citar outra apenas para substituir dispositivos
+            # específicos. A precedência desses trechos é aplicada pelos alvos
+            # normativos, sem tornar o documento inteiro inaplicável.
             if alvo.status in {"revogado", "substituido"} and documento.vigencia_inicio:
                 alvo.vigencia_fim = documento.vigencia_inicio - timedelta(days=1)
     return documentos
