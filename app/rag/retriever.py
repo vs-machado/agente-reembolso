@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterable
 
 from llama_index.core import StorageContext, load_index_from_storage
+from llama_index.core.indices.vector_store.retrievers import VectorIndexRetriever
 from llama_index.retrievers.bm25 import BM25Retriever
 
 from app.llm import criar_embeddings_llamaindex
@@ -144,7 +145,11 @@ class RetrieverHibrido:
         if not ids_aplicaveis:
             LOG.info("rag consulta=%r candidatos=0 contexto=0: nenhuma fonte aplicavel", consulta)
             return []
-        vetorial = self._indice.as_retriever(similarity_top_k=LIMITE_RETRIEVER, node_ids=ids_aplicaveis).retrieve(consulta)
+        vetorial = VectorIndexRetriever(
+            self._indice,
+            similarity_top_k=LIMITE_RETRIEVER,
+            node_ids=ids_aplicaveis,
+        ).retrieve(consulta)
         lexical = self._recuperar_bm25(consulta, _mascara_aplicaveis(self._bm25.corpus, data_atendimento))
         fundidos = fundir_rrf((("vetorial", vetorial), ("bm25", lexical)))
         # Validação defensiva para artefatos gerados em momentos distintos.

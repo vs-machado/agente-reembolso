@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 from types import SimpleNamespace
+from unittest.mock import patch
 import unittest
 
 import numpy as np
+from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 
-from app.rag.retriever import RerankerOnnx, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
+from app.rag.retriever import RerankerOnnx, RetrieverHibrido, _ids_aplicaveis, _mascara_aplicaveis, _vigente, fundir_rrf
 
 
 class TesteRetriever(unittest.TestCase):
@@ -74,3 +76,14 @@ class TesteRetriever(unittest.TestCase):
         reranker._sessao = object()
 
         self.assertEqual(reranker.ordenar("consulta", []), [])
+
+    def test_recupera_com_indice_persistido(self) -> None:
+        with patch("app.rag.retriever.criar_embeddings_llamaindex", return_value=MockEmbedding(embed_dim=1536)):
+            fontes = RetrieverHibrido().recuperar(
+                "Qual e o valor de uma URS em 2026?",
+                date(2026, 6, 10),
+            )
+
+        self.assertTrue(fontes)
+        self.assertTrue(all(fonte.citacao for fonte in fontes))
+        self.assertTrue(all(fonte.metadados["pagina"] for fonte in fontes))
