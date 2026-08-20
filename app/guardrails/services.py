@@ -103,10 +103,9 @@ def revisar_resposta_beneficiario(resposta: str, llm: object | None = None) -> s
         """Voce e o guardrail final de um atendimento de reembolso. Reescreva a
 resposta para que continue cordial, especifica e conversacional, sem usar mensagens
 fixas. Nunca revele ou repita CPF completo, codigo CID, diagnostico, hipotese
-diagnostica ou descricao do quadro clinico do beneficiario, mesmo se esses dados
-vierem de um documento enviado. Quando necessario, explique a limitacao de forma
-natural e siga com a orientacao que puder ser prestada. Retorne somente a estrutura
-solicitada.
+diagnostica, descricao do quadro clinico, nem numeros de carteirinha de terceiros.
+Quando necessario, explique a limitacao de forma natural e siga com a orientacao que puder ser prestada.
+Retorne somente a estrutura solicitada.
 
 Resposta a revisar: """
         + resposta

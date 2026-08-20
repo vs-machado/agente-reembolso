@@ -46,7 +46,6 @@ class DocumentoNormativoModel(BaseModel):
     autoridade: int | None = None
     substitui_documento_id: str | None = None
     invalida_documento_id: str | None = None
-    alvos_normativos: list[str] = Field(default_factory=list)
     evidencias: list[EvidenciaModel] = Field(default_factory=list)
     pendencias: list[str] = Field(default_factory=list)
 
@@ -148,38 +147,6 @@ def _datas(texto: str, tipo: TipoDocumento) -> tuple[date | None, date | None, d
     return publicacao, inicio, None
 
 
-def _alvos(texto: str, tipo: TipoDocumento) -> list[str]:
-    if tipo != "circular":
-        return []
-    alvos: set[str] = set()
-    normalizado = _sem_acentos(texto)
-    for trecho in re.findall(r"nova redacao aos?\s+arts?\.?(\s*[\d, e]+)", normalizado):
-        alvos.update(f"ART-{numero}" for numero in re.findall(r"\d+", trecho))
-    for ocorrencia in re.finditer(r"passa a vigorar", normalizado):
-        artigos = re.findall(r"art\.\s*(\d+)", normalizado[max(0, ocorrencia.start() - 220):ocorrencia.start()])
-        if artigos:
-            alvos.add(f"ART-{artigos[-1]}")
-    alvos.update(f"ART-{numero}" for numero in re.findall(r"restabelecida\s+a\s+redacao\s+original\s+do\s+art\.\s*(\d+)", normalizado))
-    for caput, paragrafo, unico, artigo in re.findall(r"(?:(caput)|[§\ufffd]+\s*(\d+)(?:º|o|\ufffd)?|(paragrafo\s+unico))\s+do\s+art\.?\s*(\d+).*?passa\s+a\s+vigorar", normalizado, flags=re.DOTALL):
-        sufixo = "CAPUT" if caput else f"PAR-{paragrafo}" if paragrafo else "PAR-UNICO"
-        alvos.add(f"ART-{artigo}-{sufixo}")
-    for dispositivos, artigo in re.findall(r"([^.]{0,100})\s+do\s+art\.?\s*(\d+)[^.]{0,100}?passam?\s+a\s+vigorar", normalizado):
-        if "caput" in dispositivos:
-            alvos.add(f"ART-{artigo}-CAPUT")
-        for grupo in re.findall(r"[§\ufffd]+\s*(\d+(?:º|o|\ufffd)?(?:\s*(?:e|,)\s*\d+(?:º|o|\ufffd)?)*)", dispositivos):
-            alvos.update(f"ART-{artigo}-PAR-{numero}" for numero in re.findall(r"\d+", grupo))
-    for item, anexo in re.findall(r"item\s+(\d+(?:\.\d+)*)\s+do\s+anexo\s+([ivxlcdm]+|[a-z])[^.]{0,250}?passa\s+a\s+vigorar", normalizado):
-        alvos.add(f"ANEXO-{anexo.upper()}-ITEM-{item}")
-    for parametro, chave in ((r"valor\s+da\s+urs", "PARAM-VALOR-URS"), (r"percentual\s+de\s+coparticipacao", "PARAM-COPARTICIPACAO")):
-        if re.search(rf"{parametro}[^.]{{0,250}}(?:passa\s+a\s+vigorar|fica\s+(?:fixado|alterado))", normalizado):
-            alvos.add(chave)
-    # Uma alteração explícita de dispositivo é mais precisa que a referência
-    # ampla da ementa ao artigo que o contém.
-    for alvo in tuple(alvos):
-        if alvo.startswith("ART-") and any(item.startswith(f"{alvo}-") for item in alvos):
-            alvos.discard(alvo)
-    return sorted(alvos)
-
 
 def extrair_referencias_normativas(texto: str) -> list[str]:
     """Normaliza dispositivos citados ou definidos em um trecho normativo."""
@@ -252,7 +219,7 @@ def extrair_documento(caminho: Path) -> DocumentoNormativoModel:
         documento_id=documento_id, arquivo=caminho.name, tipo=tipo,
         titulo=_titulo(texto, caminho), data_publicacao=publicacao, vigencia_inicio=inicio,
         vigencia_fim=fim, status=status, autoridade=AUTORIDADES.get(tipo),
-        alvos_normativos=_alvos(texto, tipo), evidencias=[evidencia] if evidencia else [], pendencias=pendencias,
+        evidencias=[evidencia] if evidencia else [], pendencias=pendencias,
     )
 
 
@@ -269,9 +236,6 @@ def extrair_catalogo(diretorio: Path) -> list[DocumentoNormativoModel]:
             if re.search(rf"revoga[^.]*circular(?: normativa)?\s+0?{int(numero)}\s*/\s*{ano}", texto):
                 documento.invalida_documento_id = alvo_id
                 alvo.status = "revogado"
-            # Uma circular pode citar outra apenas para substituir dispositivos
-            # específicos. A precedência desses trechos é aplicada pelos alvos
-            # normativos, sem tornar o documento inteiro inaplicável.
             if alvo.status in {"revogado", "substituido"} and documento.vigencia_inicio:
                 alvo.vigencia_fim = documento.vigencia_inicio - timedelta(days=1)
     return documentos

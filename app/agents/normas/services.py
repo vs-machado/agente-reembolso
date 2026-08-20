@@ -66,7 +66,7 @@ def formular_consultas_normativas(item: ItemDocumentalModel, pergunta: str) -> l
 
 def _fundir_fontes_recuperadas(
     fontes_por_consulta: list[list[FonteNormativaModel]],
-    limite: int = 15,
+    limite: int = 10,
 ) -> list[FonteNormativaModel]:
     """Intercala rankings focados e conserva uma unica fonte por citacao."""
     fontes: dict[str, FonteNormativaModel] = {}
@@ -142,7 +142,7 @@ def avaliar_normas_item(
             )
             for fonte in recuperador.recuperar_chunks_circulares_vigentes(
                 item.data_atendimento,
-                limite=3,
+                limite=6,
             )
         ]
     )

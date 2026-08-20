@@ -749,35 +749,11 @@ def _consolidar(estado: EstadoSupervisor) -> dict[str, Any]:
             )
         )
     ]
-    texto_fontes = " ".join(
-        fonte.texto
-        for avaliacao in avaliacoes
-        for fonte in (avaliacao.fontes_aplicaveis or avaliacao.fontes_recuperadas)
-    )
-
-    def _regra_existe_na_fonte(regra: str) -> bool:
-        if not texto_fontes:
-            return True
-        if regra.startswith("TUSS-"):
-            codigo = regra.replace("TUSS-", "")
-            return codigo in texto_fontes
-        if regra.startswith("ART-"):
-            num = regra.replace("ART-", "")
-            return re.search(rf"\bArt(?:\.|igo)?\s*{num}\b", texto_fontes, re.IGNORECASE) is not None
-        if regra.startswith("CIRC-"):
-            partes = regra.replace("CIRC-", "").split("-")
-            if len(partes) == 2:
-                c_num, c_ano = partes
-                return re.search(rf"\bCIRCULAR(?:\s+NORMATIVA)?\s*{int(c_num)}/{c_ano}\b", texto_fontes, re.IGNORECASE) is not None
-            return True
-        return True
-
     regras = list(
         dict.fromkeys(
             normalizada
             for regra in regras_brutas
             if (normalizada := _normalizar_identificador_normativo(regra)) is not None
-            and _regra_existe_na_fonte(normalizada)
         )
     )
     valor_solicitado = documento.valor_solicitado_total_brl if documento else None
@@ -840,6 +816,11 @@ def responder_turno(
         AvaliacaoNormativaModel.model_validate(item)
         for item in estado.get("avaliacoes_normativas", [])
     ]
+    calculo = (
+        ResultadoCalculoNormativoModel.model_validate(estado["calculo_normativo"])
+        if estado.get("calculo_normativo")
+        else None
+    )
     documento = _documento_base(estado)
     procedimentos = [
         item.descricao_procedimento
@@ -857,6 +838,12 @@ def responder_turno(
         "mensagem_atual": str(mensagem_atual.content),
         "resposta_anterior": respostas_anteriores[-1] if respostas_anteriores else None,
         "procedimentos": procedimentos,
+        "total_reembolsado_ano_brl": (
+            float(calculo.total_reembolsado_ano_brl)
+            if calculo and calculo.total_reembolsado_ano_brl is not None
+            else None
+        ),
+        "limitado_por_saldo_anual": calculo.limitado_por_saldo_anual if calculo else False,
         "parametros_calculo": [
             item.parametros_calculo.model_dump(mode="json")
             for item in avaliacoes

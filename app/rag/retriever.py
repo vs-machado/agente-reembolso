@@ -194,12 +194,12 @@ class RetrieverHibrido:
         )
         return retriever.retrieve(consulta)
 
-    def recuperar_chunks_circulares_vigentes(self, data_atendimento: date | None = None, limite: int = 3) -> list[FonteModel]:
+    def recuperar_chunks_circulares_vigentes(self, data_atendimento: date | None = None, limite: int = 6) -> list[FonteModel]:
         """Seleciona chunks de circulares vigentes por metadados, sem reconstruir documentos.
 
         Sujeita apenas a vigencia por periodo; a precedencia material entre normas e
-        deixada para a leitura da LLM. Retorna o chunk inicial de cada circular, que
-        contem a ementa e os artigos alterados.
+        deixada para a leitura da LLM. Retorna os chunks das circulares vigentes,
+        ordenados por vigencia mais recente e pagina.
         """
         vigentes = [
             pai
@@ -207,16 +207,12 @@ class RetrieverHibrido:
             if pai["metadados"].get("tipo") == "circular"
             and _vigente(pai["metadados"], data_atendimento)
         ]
-        por_documento: dict[str, dict] = {}
-        for pai in vigentes:
-            documento_id = pai["metadados"].get("documento_id")
-            atual = por_documento.get(documento_id)
-            pagina = int(pai["metadados"].get("pagina") or 0)
-            if atual is None or pagina < int(atual["metadados"].get("pagina") or 0):
-                por_documento[documento_id] = pai
         ordenadas = sorted(
-            por_documento.values(),
-            key=lambda pai: pai["metadados"].get("vigencia_inicio") or "0000-00-00",
+            vigentes,
+            key=lambda pai: (
+                pai["metadados"].get("vigencia_inicio") or "0000-00-00",
+                -int(pai["metadados"].get("pagina") or 0),
+            ),
             reverse=True,
         )
         selecionadas: list[FonteModel] = []

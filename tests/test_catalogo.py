@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 import unittest
 
-from ingest.catalogo import DocumentoNormativoModel, _alvos, _datas, extrair_documento, extrair_referencias_normativas
+from ingest.catalogo import DocumentoNormativoModel, _datas, extrair_documento, extrair_referencias_normativas
 
 
 class TesteCatalogo(unittest.TestCase):
@@ -28,16 +28,6 @@ class TesteCatalogo(unittest.TestCase):
             documento = extrair_documento(raiz / arquivo)
             self.assertEqual(documento.vigencia_inicio, date(2025, 12, 22))
             self.assertEqual(documento.status, "vigente")
-
-    def test_extrai_alvos_de_circular(self) -> None:
-        alvos = _alvos("O caput do art. 41 passa a vigorar com nova redação. O § 3º do art. 73 passa a vigorar.", "circular")
-
-        self.assertEqual(alvos, ["ART-41-CAPUT", "ART-73-PAR-3"])
-
-    def test_extrai_alvos_com_marcadores_corrompidos_do_pdf(self) -> None:
-        alvos = _alvos("O caput e os �� 1� e 2� do art. 41 passam a vigorar. O � 3� do art. 73 passa a vigorar.", "circular")
-
-        self.assertEqual(alvos, ["ART-41-CAPUT", "ART-41-PAR-1", "ART-41-PAR-2", "ART-73-PAR-3"])
 
     def test_normaliza_referencias_estruturais(self) -> None:
         referencias = extrair_referencias_normativas(
@@ -63,11 +53,6 @@ class TesteCatalogo(unittest.TestCase):
         referencias = extrair_referencias_normativas("pagina 1, bloco 3, Art. 41: § 2º O limite aplica-se.")
 
         self.assertIn("ART-41-PAR-2", referencias)
-
-    def test_extrai_artigo_restabelecido_por_circular(self) -> None:
-        alvos = _alvos("Fica restabelecida a redação original do art. 12. O restabelecimento não altera o art. 2.", "circular")
-
-        self.assertEqual(alvos, ["ART-12"])
 
     def test_schema_preserva_pendencia_de_curadoria(self) -> None:
         documento = DocumentoNormativoModel(documento_id="DOC-1", arquivo="novo.pdf", tipo="desconhecido", titulo="Novo documento", status="pendente_curadoria", pendencias=["tipo_documento_nao_identificado"])
