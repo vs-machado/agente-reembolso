@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+import logging
+import unittest
+
+from app.agents.documento.models import FatosDocumentaisModel
+from app.agents.normas import (
+    AvaliacaoNormativaModel,
+    FonteAfastadaModel,
+    FonteNormativaModel,
+    avaliar_normas_item,
+    calcular_reembolsos_normativos,
+    formular_consulta_normativa,
+)
+from app.rag import FonteModel
+from app.schemas import Categoria
+from app.agents.triagem import construir_evidencias_normativas
+
+
+class TesteNormas(unittest.TestCase):
+    def test_preserva_fonte_recuperada_na_avaliacao(self) -> None:
+        fonte = FonteNormativaModel(
+            texto="O teto da consulta e de 40 URS.",
+            citacao="Regulamento | Art. 12 | p. 4",
+            metadados={"status": "vigente", "vigencia_inicio": "2026-01-01"},
+            score=0.91,
+            origens=("bm25", "vetorial"),
+            score_llm=97,
+        )
+
+        avaliacao = AvaliacaoNormativaModel(
+            consulta="teto de consulta medica",
+            data_fato=date(2026, 4, 30),
+            fontes_recuperadas=[fonte],
+            fontes_aplicaveis=[fonte],
+            ha_fonte_suficiente=True,
+            vigencia_confirmada=True,
+            regras_aplicaveis=["Art. 12"],
+            resultado_elegibilidade=True,
+            justificativa="A fonte vigente contem o teto aplicavel.",
+        )
+
+        self.assertEqual(avaliacao.fontes_aplicaveis[0].citacao, fonte.citacao)
+        self.assertEqual(avaliacao.fontes_aplicaveis[0].metadados["status"], "vigente")
+        self.assertTrue(avaliacao.ha_fonte_suficiente)
+
+    def test_registra_fonte_afastada_sem_criar_regra(self) -> None:
+        fonte = FonteAfastadaModel(
+            texto="Regra revogada.",
+            citacao="Regulamento antigo | Art. 7 | p. 2",
+            metadados={"status": "revogado", "vigencia_fim": "2025-12-31"},
+            score=0.65,
+            origens=("vetorial",),
+            motivo_afastamento="Fora da vigencia da data-fato.",
+        )
+
+        avaliacao = AvaliacaoNormativaModel(
+            consulta="teto de consulta medica",
+            fontes_recuperadas=[fonte],
+            fontes_afastadas=[fonte],
+            pendencias=["data do atendimento"],
+            justificativa="A data-fato e necessaria para confirmar a vigencia.",
+        )
+
+        self.assertFalse(avaliacao.ha_fonte_suficiente)
+        self.assertFalse(avaliacao.vigencia_confirmada)
+        self.assertIsNone(avaliacao.resultado_elegibilidade)
+        self.assertEqual(avaliacao.regras_aplicaveis, [])
+        self.assertEqual(avaliacao.fontes_afastadas[0].motivo_afastamento, "Fora da vigencia da data-fato.")
+
+    def test_anexo_invalido_nao_formula_consulta(self) -> None:
+        fatos = FatosDocumentaisModel(
+            categoria=Categoria.INVALIDO,
+            natureza_medica=False,
+            aproveitavel=False,
+            justificativa="Arquivo sem natureza assistencial.",
+        )
+
+        self.assertIsNone(formular_consulta_normativa(fatos, "Quero reembolso"))
+
+    def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *args, **kwargs):
+                return [
+                    FonteModel(
+                        texto="A cobertura e prevista.",
+                        citacao="Regulamento | Art. 10 | p. 2",
+                        metadados={"status": "vigente"},
+                        score=0.9,
+                        origens=("vetorial",),
+                    ),
+                    FonteModel(
+                        texto="A cobertura e vedada.",
+                        citacao="Circular | Art. 3 | p. 1",
+                        metadados={"status": "vigente"},
+                        score=0.8,
+                        origens=("bm25",),
+                    ),
+                ]
+
+        class LlmFalso:
+            def with_structured_output(self, schema):
+                return self
+
+            def invoke(self, prompt: str):
+                return {
+                    "indices_aplicaveis": [1, 2],
+                    "ha_conflito_material": True,
+                    "resultado_elegibilidade": None,
+                    "justificativa": "As fontes vigentes chegam a conclusoes incompativeis.",
+                }
+
+        fatos = FatosDocumentaisModel(
+            categoria=Categoria.CONSULTA_MEDICA,
+            natureza_medica=True,
+            aproveitavel=True,
+            justificativa="Recibo valido.",
+            valor_solicitado_brl=Decimal("240"),
+            data_atendimento=date(2026, 4, 30),
+            descricao_procedimento="Consulta medica",
+        )
+
+        with self.assertLogs("app.agents.normas.services", logging.WARNING) as logs:
+            avaliacao = avaliar_normas_item(
+                fatos,
+                "Tenho direito ao reembolso?",
+                recuperador=RecuperadorFalso(),
+                llm=LlmFalso(),
+            )
+
+        self.assertTrue(avaliacao.ha_conflito_material)
+        self.assertIsNone(avaliacao.resultado_elegibilidade)
+        self.assertEqual(len(avaliacao.fontes_aplicaveis), 2)
+        self.assertIn("conflito_normativo", logs.output[0])
+
+    def test_conflito_nao_define_elegibilidade_nem_protocolo(self) -> None:
+        avaliacao = AvaliacaoNormativaModel(
+            consulta="consulta medica",
+            ha_conflito_material=True,
+            justificativa="Fontes materiais conflitantes.",
+        )
+
+        evidencias = construir_evidencias_normativas(avaliacao)
+
+        self.assertTrue(evidencias.conflito)
+        self.assertIsNone(evidencias.resultado_elegibilidade)
+        self.assertIn("elegibilidade nao estabelecida por conflito normativo", evidencias.pendencias)
+
+    def test_calcula_itens_respeitando_saldo_anual_comum(self) -> None:
+        parametros = {
+            "teto_urs": "20",
+            "valor_urs_brl": "10",
+            "coparticipacao_percentual": "0",
+            "limite_anual_brl": "250",
+            "exige_limite_anual": True,
+        }
+        fatos = [
+            FatosDocumentaisModel(
+                categoria=Categoria.CONSULTA_MEDICA, natureza_medica=True, aproveitavel=True,
+                justificativa="ok", valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 4, 30),
+            ),
+            FatosDocumentaisModel(
+                categoria=Categoria.CONSULTA_MEDICA, natureza_medica=True, aproveitavel=True,
+                justificativa="ok", valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 5, 1),
+            ),
+        ]
+        avaliacoes = [
+            AvaliacaoNormativaModel(consulta="c", justificativa="ok", parametros_calculo=parametros),
+            AvaliacaoNormativaModel(consulta="c", justificativa="ok", parametros_calculo=parametros),
+        ]
+
+        resultado = calcular_reembolsos_normativos(fatos, avaliacoes, totais_reembolsados_ano={2026: "100"})
+
+        self.assertEqual(resultado.valores_itens_brl, [Decimal("150"), Decimal("0")])
+        self.assertEqual(resultado.valor_reembolso_brl, Decimal("150.00"))
+
+
+if __name__ == "__main__":
+    unittest.main()

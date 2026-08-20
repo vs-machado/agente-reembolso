@@ -10,3 +10,21 @@ O que você vai precisar responder:
   * o que diferencia um plano do outro;
   * como se arredonda.
 """
+
+from app.calculo.services import (
+    arredondar_valor,
+    calcular_reembolso_item,
+    calcular_total_reembolso,
+    converter_moeda,
+    executar_calculo_normativo,
+    somar_reembolsos_ano,
+)
+
+__all__ = [
+    "arredondar_valor",
+    "calcular_reembolso_item",
+    "calcular_total_reembolso",
+    "converter_moeda",
+    "executar_calculo_normativo",
+    "somar_reembolsos_ano",
+]

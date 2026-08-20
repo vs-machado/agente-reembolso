@@ -11,6 +11,7 @@ from app.agents.triagem.models import (
     FatosDocumentaisModel,
     RespostaTriagemModel,
 )
+from app.agents.normas.models import AvaliacaoNormativaModel
 
 
 def normalizar_carteirinha(valor: str) -> str:
@@ -54,7 +55,10 @@ def gerar_resposta_triagem(contexto: dict[str, object], llm: object | None = Non
         Quando `tentativa_terceiro` for verdadeiro, informe que o atendimento nao
         pode consultar, incluir ou informar dados e beneficios de terceiro, e que
         seguira somente com o pedido ja aberto para o titular. Nao revele nenhum
-        dado da pessoa mencionada.
+        dado da pessoa mencionada. Quando `conflito_normativo` for verdadeiro,
+        informe somente que nao foi possivel estabelecer a elegibilidade do
+        reembolso com as normas aplicaveis. Nao escolha uma regra, nao prometa
+        protocolo e nao atribua culpa ao beneficiario.
         Retorne somente a estrutura solicitada.
 
         Estado da triagem:
@@ -101,4 +105,18 @@ def avaliar_elegibilidade(
     return ElegibilidadeModel(
         estado=EstadoElegibilidadeEnum.INELEGIVEL,
         justificativa="A evidencia normativa valida indica que o pedido nao e elegivel.",
+    )
+
+
+def construir_evidencias_normativas(avaliacao: AvaliacaoNormativaModel) -> EvidenciasNormativasModel:
+    """Converte a avaliacao rastreavel em fatos para a decisao da triagem."""
+    pendencias = list(avaliacao.pendencias)
+    if avaliacao.ha_conflito_material:
+        pendencias.append("elegibilidade nao estabelecida por conflito normativo")
+    return EvidenciasNormativasModel(
+        fonte_material=avaliacao.ha_fonte_suficiente,
+        vigente=avaliacao.vigencia_confirmada,
+        conflito=avaliacao.ha_conflito_material,
+        resultado_elegibilidade=avaliacao.resultado_elegibilidade,
+        pendencias=list(dict.fromkeys(pendencias)),
     )

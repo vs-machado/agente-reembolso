@@ -115,6 +115,8 @@ def _contexto_resposta(triagem: dict[str, Any]) -> dict[str, object]:
         "cadastro_validado": bool(triagem.get("cadastro_validado")),
         "anexo_presente": bool(triagem.get("anexo_presente")),
         "intencao_confirmada": bool(triagem.get("intencao_confirmada")),
+        "conflito_normativo": bool(triagem.get("conflito_normativo")),
+        "elegibilidade": triagem.get("elegibilidade"),
     }
 
 

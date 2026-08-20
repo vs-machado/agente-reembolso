@@ -63,6 +63,20 @@ class TesteTriagem(unittest.TestCase):
         self.assertIn("dados e beneficios de terceiro", llm.prompt)
         self.assertIn("'tentativa_terceiro': True", llm.prompt)
 
+    def test_prompt_orienta_resposta_para_conflito_normativo(self) -> None:
+        class LlmFalso:
+            def with_structured_output(self, schema):
+                return self
+
+            def invoke(self, prompt: str) -> dict:
+                self.prompt = prompt
+                return {"resposta": "Nao foi possivel estabelecer a elegibilidade."}
+
+        llm = LlmFalso()
+        gerar_resposta_triagem({"conflito_normativo": True}, llm)
+
+        self.assertIn("nao foi possivel estabelecer a elegibilidade", llm.prompt)
+
     def test_mantem_elegibilidade_pendente_sem_fontes_completas(self) -> None:
         resultado = avaliar_elegibilidade(
             DadosCadastraisModel(validado=True),

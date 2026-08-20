@@ -13,6 +13,7 @@ from app.agents.triagem.models import (
 )
 from app.agents.triagem.services import (
     avaliar_elegibilidade,
+    construir_evidencias_normativas,
     extrair_triagem_estruturada,
     gerar_resposta_triagem,
     normalizar_carteirinha,
@@ -30,6 +31,7 @@ __all__ = [
     "ResultadoTriagemModel",
     "RespostaTriagemModel",
     "avaliar_elegibilidade",
+    "construir_evidencias_normativas",
     "extrair_triagem_estruturada",
     "gerar_resposta_triagem",
     "normalizar_carteirinha",

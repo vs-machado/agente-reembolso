@@ -31,6 +31,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from app.tools.cotacao import CotacaoPtaxModel, consultar_cotacao_ptax
+
 
 class ErroMcp(RuntimeError):
     """Falha de transporte ou de execucao de ferramenta no MCP."""
@@ -57,6 +59,9 @@ class ClienteMcp:
         return self._chamar(
             "abrir_protocolo", {"carteirinha": carteirinha, "payload": payload}
         )
+
+    def consultar_historico(self, carteirinha: str) -> ResultadoMcp:
+        return self._chamar("consultar_historico", {"carteirinha": carteirinha})
 
     def _chamar(self, nome: str, argumentos: dict[str, Any]) -> ResultadoMcp:
         try:
@@ -107,4 +112,10 @@ def _dados_resultado(resultado: Any) -> Any:
     return None
 
 
-__all__ = ["ClienteMcp", "ErroMcp", "ResultadoMcp"]
+__all__ = [
+    "ClienteMcp",
+    "CotacaoPtaxModel",
+    "ErroMcp",
+    "ResultadoMcp",
+    "consultar_cotacao_ptax",
+]
