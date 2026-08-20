@@ -33,7 +33,12 @@ def formular_consulta_normativa(item: ItemDocumentalModel, pergunta: str) -> str
         partes.append("indicacao clinica expressa")
     if pergunta.strip():
         partes.append(f"pergunta do beneficiario {pergunta.strip()}")
-    partes.append("regras vigentes de competencia da analise automatizada e alcada")
+    partes.append(
+        "regras vigentes de cobertura, carencia, teto em URS, valor da URS, "
+        "coparticipacao por plano e faixa de adesao, limite anual, ordem do calculo, "
+        "competencia da analise automatizada e alcada; considerar circulares que "
+        "alterem os artigos aplicaveis"
+    )
     return "; ".join(partes)
 
 
@@ -71,6 +76,7 @@ def avaliar_normas_item(
         for fonte in recuperador.recuperar(
             consulta,
             data_atendimento=item.data_atendimento,
+            limite=10,
             validar_relevancia=True,
         )
     ]

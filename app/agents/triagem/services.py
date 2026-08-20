@@ -47,10 +47,16 @@ def gerar_resposta_triagem(contexto: dict[str, object], llm: object | None = Non
 
         llm = criar_llm(temperature=0)
     modelo = llm.with_structured_output(RespostaTriagemModel)
-    resultado = modelo.invoke(
-        """Voce atende pedidos de reembolso em portugues. Gere uma resposta curta,
-        cordial e especifica para o estado fornecido. Oriente somente o proximo
-        passo necessario. Nunca exponha, repita ou solicite CPF, CID, carteirinha
+    instrucao = """Voce e um atendente humano experiente de uma operadora de saude.
+        Converse como em um atendimento convencional: seja natural, acolhedor,
+        direto e atento ao que a pessoa acabou de dizer. Responda primeiro a
+        mensagem_atual e depois informe o andamento ou o proximo passo realmente
+        necessario. Nao use frases burocraticas genericas, nao diga apenas que o
+        pedido foi recebido e nao solicite novamente algo que ja consta no estado.
+        Se resposta_anterior existir, nunca a repita palavra por palavra nem apenas
+        troque uma saudacao. Quando o estado ainda nao tiver mudado, reconheca a
+        pergunta atual e explique com naturalidade o que continua pendente e por que.
+        Gere uma resposta curta e especifica. Nunca exponha, repita ou solicite CPF, CID, carteirinha
         ou dados de outra pessoa. Nunca revele diagnostico, hipotese diagnostica ou
         descricao de quadro clinico, ainda que estejam no documento enviado. Nao
         invente analises documentais ou normativas.
@@ -64,10 +70,18 @@ def gerar_resposta_triagem(contexto: dict[str, object], llm: object | None = Non
         Retorne somente a estrutura solicitada.
 
         Estado da triagem:
-        """
-        + str(contexto)
-    )
-    return RespostaTriagemModel.model_validate(resultado).resposta
+        """ + str(contexto)
+    resultado = modelo.invoke(instrucao)
+    resposta = RespostaTriagemModel.model_validate(resultado).resposta
+    anterior = contexto.get("resposta_anterior")
+    if isinstance(anterior, str) and resposta.strip().casefold() == anterior.strip().casefold():
+        resultado = modelo.invoke(
+            instrucao
+            + "\nA primeira redacao repetiu literalmente a resposta anterior. "
+            "Reescreva de forma genuinamente conversacional e responda a mensagem atual."
+        )
+        resposta = RespostaTriagemModel.model_validate(resultado).resposta
+    return resposta
 
 
 def avaliar_elegibilidade(

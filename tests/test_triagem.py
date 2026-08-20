@@ -55,6 +55,33 @@ class TesteTriagem(unittest.TestCase):
 
         self.assertEqual(resposta, "Informe o documento do atendimento.")
 
+    def test_prompt_usa_persona_e_evitar_repeticao(self) -> None:
+        class LlmFalso:
+            def __init__(self) -> None:
+                self.prompts: list[str] = []
+
+            def with_structured_output(self, schema):
+                return self
+
+            def invoke(self, prompt: str) -> dict:
+                self.prompts.append(prompt)
+                resposta = "Resposta anterior." if len(self.prompts) == 1 else "Entendo a duvida atual."
+                return {"resposta": resposta}
+
+        llm = LlmFalso()
+        resposta = gerar_resposta_triagem(
+            {
+                "mensagem_atual": "Mas por que ainda esta pendente?",
+                "resposta_anterior": "Resposta anterior.",
+            },
+            llm,
+        )
+
+        self.assertEqual(resposta, "Entendo a duvida atual.")
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("atendente humano experiente", llm.prompts[0])
+        self.assertIn("nunca a repita palavra por palavra", llm.prompts[0])
+
     def test_prompt_orienta_recusa_de_dados_de_terceiro(self) -> None:
         llm = LlmEstruturadoFalso({"resposta": "Vou continuar com o titular."})
 

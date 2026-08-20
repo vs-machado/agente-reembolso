@@ -6,7 +6,11 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import date
 from enum import Enum
+import json
+import logging
+import os
 from threading import RLock
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -41,6 +45,7 @@ from app.schemas import Anexo, Categoria, ChatRequest, ChatResponse, Decisao
 from app.tools import ClienteMcp, CotacaoPtaxModel, consultar_cotacao_ptax
 
 LIMITE_PASSOS_TURNO = 12
+LOG = logging.getLogger("uvicorn.error")
 
 
 class AcaoSupervisorEnum(str, Enum):
@@ -213,6 +218,8 @@ def _documento_base(estado: EstadoSupervisor) -> FatosDocumentaisModel | None:
 def _ha_normas_pendentes(estado: EstadoSupervisor) -> bool:
     documento = _documento_base(estado)
     if documento is None or not documento.natureza_medica or not documento.itens:
+        return False
+    if not estado.get("triagem", {}).get("cadastro_validado"):
         return False
     if any(item.data_atendimento is None for item in documento.itens):
         return False
@@ -488,7 +495,40 @@ def executar_normas(
         pergunta = str(
             next(item for item in reversed(estado["messages"]) if isinstance(item, HumanMessage)).content
         )
-        avaliacoes = avaliador(documento.itens, pergunta)
+        dados_cadastrais = estado.get("triagem", {}).get("dados_cadastrais", {})
+        contexto_cadastral = {
+            chave: dados_cadastrais.get(chave)
+            for chave in ("plano", "data_adesao", "status")
+            if dados_cadastrais.get(chave) is not None
+        }
+        pergunta_normativa = (
+            f"{pergunta}\nContexto cadastral na data do atendimento: "
+            f"{contexto_cadastral}"
+        )
+        avaliacoes = avaliador(documento.itens, pergunta_normativa)
+        LOG.info(
+            "normas_resultado=%s",
+            json.dumps(
+                [
+                    {
+                        "consulta": item.consulta,
+                        "fontes": [fonte.citacao for fonte in item.fontes_aplicaveis],
+                        "parametros_calculo": (
+                            item.parametros_calculo.model_dump(mode="json")
+                            if item.parametros_calculo
+                            else None
+                        ),
+                        "alcada": (
+                            item.avaliacao_alcada.model_dump(mode="json")
+                            if item.avaliacao_alcada
+                            else None
+                        ),
+                    }
+                    for item in avaliacoes
+                ],
+                ensure_ascii=False,
+            ),
+        )
         return {
             "avaliacoes_normativas": [item.model_dump(mode="json") for item in avaliacoes],
             "normas_documentos_revisao": estado.get("documentos_revisao", 0),
@@ -698,6 +738,16 @@ def responder_turno(
         pendencias_conversa.append("carteirinha valida do titular")
     if not estado.get("anexos"):
         pendencias_conversa.append("comprovante do atendimento")
+    mensagem_atual = next(
+        item for item in reversed(estado["messages"]) if isinstance(item, HumanMessage)
+    )
+    respostas_anteriores = [
+        str(item.content) for item in estado["messages"] if isinstance(item, AIMessage)
+    ]
+    avaliacoes = [
+        AvaliacaoNormativaModel.model_validate(item)
+        for item in estado.get("avaliacoes_normativas", [])
+    ]
     contexto = {
         **dados,
         "pendencias": list(dict.fromkeys(pendencias_conversa)),
@@ -705,6 +755,13 @@ def responder_turno(
         "protocolo_aberto": bool(protocolo),
         "tentativa_terceiro": bool(estado.get("pedido_terceiro_atual")),
         "conflito_normativo": bool(triagem.get("conflito_normativo")),
+        "mensagem_atual": str(mensagem_atual.content),
+        "resposta_anterior": respostas_anteriores[-1] if respostas_anteriores else None,
+        "parametros_calculo": [
+            item.parametros_calculo.model_dump(mode="json")
+            for item in avaliacoes
+            if item.parametros_calculo is not None
+        ],
     }
     texto = revisor_resposta(gerador(contexto))
     resposta = ChatResponse(resposta=texto, protocolo=protocolo, **dados)
@@ -713,6 +770,28 @@ def responder_turno(
         "triagem": triagem,
         "resposta_chat": resposta.model_dump(mode="json"),
     }
+
+
+def _executar_com_telemetria(
+    nome: str,
+    operacao: Callable[[EstadoSupervisor], dict[str, Any]],
+    estado: EstadoSupervisor,
+) -> dict[str, Any]:
+    """Registra a duracao de cada no mesmo quando a execucao falha."""
+    inicio = perf_counter()
+    sucesso = False
+    try:
+        resultado = operacao(estado)
+        sucesso = True
+        return resultado
+    finally:
+        LOG.info(
+            "agente_no nome=%s duracao_ms=%.1f sucesso=%s turno_id=%s",
+            nome,
+            (perf_counter() - inicio) * 1000,
+            sucesso,
+            estado.get("turno_id", ""),
+        )
 
 
 def _compilar(
@@ -729,24 +808,51 @@ def _compilar(
     roteador: RoteadorSupervisor,
 ):
     grafo = StateGraph(EstadoSupervisor)
-    grafo.add_node("preparar_turno", preparar_turno)
-    grafo.add_node("coordenar", lambda estado: coordenar(estado, roteador))
     grafo.add_node(
-        "triagem",
-        lambda estado: executar_triagem(
-            estado, extrator, cliente_mcp, validador_pedido_terceiro
+        "preparar_turno",
+        lambda estado: _executar_com_telemetria("preparar_turno", preparar_turno, estado),
+    )
+    grafo.add_node(
+        "coordenar",
+        lambda estado: _executar_com_telemetria(
+            "coordenar", lambda atual: coordenar(atual, roteador), estado
         ),
     )
-    grafo.add_node("documento", lambda estado: executar_documento(estado, analisador))
+    grafo.add_node(
+        "triagem",
+        lambda estado: _executar_com_telemetria(
+            "triagem",
+            lambda atual: executar_triagem(
+                atual, extrator, cliente_mcp, validador_pedido_terceiro
+            ),
+            estado,
+        ),
+    )
+    grafo.add_node(
+        "documento",
+        lambda estado: _executar_com_telemetria(
+            "documento", lambda atual: executar_documento(atual, analisador), estado
+        ),
+    )
     grafo.add_node(
         "normas",
-        lambda estado: executar_normas(
-            estado, avaliador, calculador, cliente_mcp, consultar_cotacao
+        lambda estado: _executar_com_telemetria(
+            "normas",
+            lambda atual: executar_normas(
+                atual, avaliador, calculador, cliente_mcp, consultar_cotacao
+            ),
+            estado,
         ),
     )
     grafo.add_node(
         "responder",
-        lambda estado: responder_turno(estado, gerador, revisor_resposta, cliente_mcp),
+        lambda estado: _executar_com_telemetria(
+            "responder",
+            lambda atual: responder_turno(
+                atual, gerador, revisor_resposta, cliente_mcp
+            ),
+            estado,
+        ),
     )
     grafo.add_edge(START, "preparar_turno")
     grafo.add_edge("preparar_turno", "coordenar")
@@ -841,7 +947,22 @@ class Supervisor:
         config = {"configurable": {"thread_id": req.session_id}}
         with self._sessao_bloqueada(req.session_id):
             estado = self._grafo.invoke(estado_inicial, config=config)
-        return ChatResponse.model_validate(estado["resposta_chat"])
+        resposta = ChatResponse.model_validate(estado["resposta_chat"])
+        if os.getenv("AGENTE_LOG_CHAT_COMPLETO", "").lower() in {"1", "true", "sim"}:
+            LOG.info(
+                "chat_completo=%s",
+                json.dumps(
+                    {
+                        "session_id": req.session_id,
+                        "turno_id": turno_id,
+                        "beneficiario": req.mensagem,
+                        "anexo": req.anexo.filename if req.anexo else None,
+                        "agente": resposta.model_dump(mode="json"),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        return resposta
 
     def aplicar_decisao(
         self,

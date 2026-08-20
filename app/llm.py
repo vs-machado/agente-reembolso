@@ -36,6 +36,8 @@ from pathlib import Path
 MODELO = "gemini-2.5-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-2"
 DIMENSOES = 1536
+TIMEOUT_LLM_SEGUNDOS = 30.0
+TENTATIVAS_LLM = 2
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -79,6 +81,8 @@ def criar_llm(**extra):
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     endpoint, chave = _ambiente()
+    extra.setdefault("request_timeout", TIMEOUT_LLM_SEGUNDOS)
+    extra.setdefault("retries", TENTATIVAS_LLM)
     return ChatGoogleGenerativeAI(
         model=MODELO, google_api_key=chave, base_url=endpoint,
         temperature=extra.pop("temperature", 0), **extra)

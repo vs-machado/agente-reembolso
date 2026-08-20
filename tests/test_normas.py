@@ -77,6 +77,16 @@ class TesteNormas(unittest.TestCase):
 
         self.assertIsNone(formular_consulta_normativa(fatos, "Quero reembolso"))
 
+    def test_consulta_inclui_todos_os_parametros_do_calculo(self) -> None:
+        consulta = formular_consulta_normativa(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA),
+            "plano Pleno e data de adesao 2025-09-01",
+        )
+
+        self.assertIsNotNone(consulta)
+        self.assertIn("coparticipacao por plano e faixa de adesao", consulta)
+        self.assertIn("considerar circulares", consulta)
+
     def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
         class RecuperadorFalso:
             def recuperar(self, *args, **kwargs):

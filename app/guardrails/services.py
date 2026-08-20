@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 CPF_COMPLETO = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 CODIGO_CID = re.compile(r"\b[A-TV-Z]\d{2}(?:\.\d)?\b", re.IGNORECASE)
 VINCULO_TERCEIRO = re.compile(
-    r"\b(c[oô]njuge|espos[oa]|companheir[oa]|dependente|filh[oa]|pai|m[aã]e)\b",
+    r"\b(c[oô]njuge|espos[oa]|companheir[oa]|dependente|filh[oa]|pai|m[aã]e|"
+    r"amig[oa]|terceir[oa]|outra pessoa)\b",
     re.IGNORECASE,
 )
 CARTEIRINHA_NA_MENSAGEM = re.compile(
@@ -57,13 +58,20 @@ def validar_pedido_terceiro(
     llm: object | None = None,
 ) -> bool:
     """Classifica semanticamente se o pedido trata de pessoa fora da sessao."""
+    if not mensagem.strip():
+        return False
+    indicio_local = identificar_pedido_terceiro(
+        mensagem, carteirinha_candidata, carteirinha_sessao
+    )
+    if indicio_local:
+        return True
+    if carteirinha_candidata and not carteirinha_sessao:
+        # A primeira carteirinha sem vinculo de terceiro estabelece o titular.
+        return False
     if llm is None:
         from app.llm import criar_llm
 
         llm = criar_llm(temperature=0)
-    indicio_local = identificar_pedido_terceiro(
-        mensagem, carteirinha_candidata, carteirinha_sessao
-    )
     resultado = llm.with_structured_output(ValidacaoTerceiroModel).invoke(
         """Voce e o guardrail de privacidade de um atendimento de reembolso.
 Decida se a mensagem pede consulta, informacao ou tratamento para qualquer pessoa
@@ -83,12 +91,14 @@ Mensagem: """
 
 def revisar_resposta_beneficiario(resposta: str, llm: object | None = None) -> str:
     """Reformula a saida com o LLM quando ela puder expor dado protegido."""
+    indicio_sensivel = bool(CPF_COMPLETO.search(resposta) or CODIGO_CID.search(resposta))
+    indicio_diagnostico = bool(ATRIBUICAO_DIAGNOSTICA.search(resposta))
+    if not indicio_sensivel and not indicio_diagnostico:
+        return resposta
     if llm is None:
         from app.llm import criar_llm
 
         llm = criar_llm(temperature=0)
-    indicio_sensivel = bool(CPF_COMPLETO.search(resposta) or CODIGO_CID.search(resposta))
-    indicio_diagnostico = bool(ATRIBUICAO_DIAGNOSTICA.search(resposta))
     resultado = llm.with_structured_output(RespostaProtegidaModel).invoke(
         """Voce e o guardrail final de um atendimento de reembolso. Reescreva a
 resposta para que continue cordial, especifica e conversacional, sem usar mensagens

@@ -75,6 +75,7 @@ class TesteSupervisorMultiagente(unittest.TestCase):
     def test_normas_define_alcada_sem_regra_rigida_no_supervisor(self) -> None:
         cliente = ClienteMcpSupervisorFalso()
         rotas_com_opcao: list[list[AcaoSupervisorEnum]] = []
+        perguntas_normativas: list[str] = []
         calculos = 0
 
         def analisar(*args, **kwargs) -> FatosDocumentaisModel:
@@ -97,6 +98,7 @@ class TesteSupervisorMultiagente(unittest.TestCase):
             )
 
         def avaliar(itens, pergunta):
+            perguntas_normativas.append(pergunta)
             fonte = fonte_normativa_falsa()
             return [
                 AvaliacaoNormativaModel(
@@ -163,6 +165,7 @@ class TesteSupervisorMultiagente(unittest.TestCase):
         self.assertEqual(repetida.protocolo, "20260000042")
         self.assertEqual(len(cliente.protocolos), 1)
         self.assertEqual(calculos, 0)
+        self.assertIn("'plano': 'Essencial'", perguntas_normativas[0])
         self.assertTrue(any(len(opcoes) > 1 for opcoes in rotas_com_opcao))
         estado = supervisor._grafo.get_state({"configurable": {"thread_id": "alcada"}})
         self.assertEqual(estado.values["anexos"][0]["anexo"]["base64"], "cGRm")
