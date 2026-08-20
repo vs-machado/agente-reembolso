@@ -5,11 +5,8 @@ from __future__ import annotations
 import base64
 import binascii
 import io
-import re
 import unicodedata
 from collections.abc import Callable
-from datetime import date
-from decimal import Decimal, InvalidOperation
 
 import fitz
 import pytesseract
@@ -17,8 +14,12 @@ from docx import Document
 from PIL import Image
 
 from app.agents.documento.models import (
+    AnaliseConteudoDocumentalModel,
     ClassificacaoDocumentoModel,
+    DadosDocumentoModel,
+    EvidenciaRelatorioClinicoModel,
     FatosDocumentaisModel,
+    ItemDocumentalModel,
     TextoExtraidoModel,
 )
 from app.schemas import Anexo, Categoria
@@ -59,13 +60,8 @@ def extrair_texto(anexo: Anexo) -> TextoExtraidoModel:
     return TextoExtraidoModel(erro="tipo de arquivo nao suportado")
 
 
-def _texto_normalizado(texto: str) -> str:
-    sem_acentos = unicodedata.normalize("NFD", texto.casefold())
-    sem_acentos = "".join(caractere for caractere in sem_acentos if not unicodedata.combining(caractere))
-    return " ".join(sem_acentos.split())
-
-
 ClassificadorDocumento = Callable[[str], ClassificacaoDocumentoModel]
+AnalisadorConteudoDocumental = Callable[[str], AnaliseConteudoDocumentalModel]
 
 
 def classificar_documento(texto: str, llm: object | None = None) -> ClassificacaoDocumentoModel:
@@ -93,71 +89,113 @@ def classificar_documento(texto: str, llm: object | None = None) -> Classificaca
     return ClassificacaoDocumentoModel.model_validate(resultado)
 
 
-def _valor(texto: str) -> Decimal | None:
-    ocorrencias = re.findall(r"R\$\s*([\d.]+,\d{2})", texto)
-    if not ocorrencias:
-        return None
-    try:
-        return Decimal(ocorrencias[-1].replace(".", "").replace(",", "."))
-    except InvalidOperation:
-        return None
+def _normalizar_nome(nome: str) -> str:
+    normalizado = unicodedata.normalize("NFD", nome.casefold())
+    sem_acentos = "".join(
+        caractere for caractere in normalizado if not unicodedata.combining(caractere)
+    )
+    return " ".join(sem_acentos.split())
 
 
-def _data_atendimento(texto: str) -> date | None:
-    ocorrencia = re.search(r"data do atendimento\s*:\s*(\d{2}/\d{2}/\d{4})", texto, re.I)
-    if not ocorrencia:
-        return None
-    try:
-        return date.fromisoformat("-".join(reversed(ocorrencia.group(1).split("/"))))
-    except ValueError:
-        return None
-
-
-def _pendencias_fiscais(texto: str, categoria: Categoria, titular: str | None) -> list[str]:
-    normalizado = _texto_normalizado(texto)
+def _pendencias_fiscais(
+    dados: DadosDocumentoModel,
+    categoria: Categoria,
+    titular: str | None,
+) -> list[str]:
     pendencias: list[str] = []
-    nome = re.search(r"(?:recebi de|paciente)\s*:\s*([^\n]+)", texto, re.I)
-    if not nome:
+    if not dados.nome_beneficiario:
         pendencias.append("P01")
-    elif titular and _texto_normalizado(nome.group(1)) != _texto_normalizado(titular):
+    elif titular and _normalizar_nome(dados.nome_beneficiario) != _normalizar_nome(titular):
         pendencias.append("P03")
-    if not re.search(r"cpf do paciente\s*:\s*\d", texto, re.I):
+    if not dados.cpf_beneficiario_presente:
         pendencias.append("P02")
-    if not re.search(r"(?:profissional|prestador)\s*:\s*[^\n]+", texto, re.I):
+    if not dados.nome_prestador:
         pendencias.append("P04")
-    if not re.search(r"cpf/cnpj\s*:\s*\d", texto, re.I):
+    if not dados.cpf_cnpj_prestador_presente:
         pendencias.append("P05")
-    if not re.search(r"(?:crm|crp|cro|crefito)[-\s]?[a-z]*\s*\d", normalizado, re.I):
+    if not dados.registro_conselho:
         pendencias.append("P06")
-    if not _data_atendimento(texto):
+    if not dados.data_atendimento:
         pendencias.append("P09")
-    if not re.search(r"(?:referente a|descricao|descrição)\s*:\s*[^\n]+", texto, re.I):
+    if not dados.descricao_procedimento:
         pendencias.append("P13")
-    if _valor(texto) is None:
+    if dados.valor_total_original is None:
         pendencias.append("P15")
-    if not re.search(r"_{5,}|assinatura|carimbo", texto, re.I):
+    if not dados.assinatura_ou_carimbo_presente:
         pendencias.append("P18")
-    if categoria == Categoria.SESSAO_TERAPIA and not re.search(r"sess[aã]o n[ºo].*?:\s*\d+", texto, re.I):
+    if categoria == Categoria.SESSAO_TERAPIA and dados.numero_sessao_ano is None:
         pendencias.append("P19")
     return pendencias
 
 
-def _pendencias_relatorio(texto: str, titular: str | None) -> list[str]:
+def _pendencias_relatorio(
+    dados: DadosDocumentoModel,
+    evidencia: EvidenciaRelatorioClinicoModel | None,
+    titular: str | None,
+) -> list[str]:
     pendencias: list[str] = []
-    nome = re.search(r"paciente\s*:\s*([^\n]+)", texto, re.I)
-    if not nome:
+    if not dados.nome_beneficiario:
         pendencias.append("P01")
-    elif titular and _texto_normalizado(nome.group(1)) != _texto_normalizado(titular):
+    elif titular and _normalizar_nome(dados.nome_beneficiario) != _normalizar_nome(titular):
         pendencias.append("P03")
-    if not re.search(r"(?:crm|crp|cro|crefito)[-\s]?[a-z]*\s*\d", texto, re.I):
+    if not dados.registro_conselho:
         pendencias.append("P06")
-    if not re.search(r"data de emiss[aã]o\s*:\s*\d{2}/\d{2}/\d{4}", texto, re.I):
+    if not evidencia or not evidencia.data_emissao:
         pendencias.append("P09")
-    if not re.search(r"manuten[cç][aã]o do tratamento", texto, re.I):
+    if not evidencia or evidencia.manutencao_tratamento is not True:
         pendencias.append("P21")
-    if not re.search(r"_{5,}|assinatura", texto, re.I):
+    if not evidencia or evidencia.assinatura_presente is not True:
         pendencias.append("P22")
     return pendencias
+
+
+def analisar_conteudo_documental(
+    texto: str,
+    llm: object | None = None,
+) -> AnaliseConteudoDocumentalModel:
+    """Classifica e extrai itens com uma unica invocacao do modelo."""
+    if llm is None:
+        from app.llm import criar_llm
+
+        llm = criar_llm(temperature=0)
+    modelo = llm.with_structured_output(AnaliseConteudoDocumentalModel)
+    resultado = modelo.invoke(
+        """Analise este documento para um pedido de reembolso medico.
+        Classifique-o exclusivamente em uma categoria disponivel no schema.
+        Marque `INVALIDO` e `natureza_medica=false` somente se o arquivo nao for
+        documento de despesa assistencial nem evidencia clinica. Nao confunda
+        campo obrigatorio ausente com documento invalido.
+
+        Para documento fiscal valido, extraia somente procedimentos ou sessoes
+        com valor individualizado. Preserve a categoria propria de cada item,
+        inclusive quando houver categorias diferentes no mesmo documento. Nao
+        divida valor global, nao estime valores e nao invente datas, codigos ou
+        indicacoes clinicas. Para cada valor, preserve `valor_original` e o
+        `codigo_moeda_iso`. Preencha `valor_solicitado_brl` somente quando a
+        moeda indicada no documento for BRL; nunca converta moeda por estimativa.
+        Retorne `itens` vazio para documento invalido, relatorio clinico ou valor
+        global sem discriminacao.
+
+        Preencha `dados_documento` com os fatos do documento, independentemente
+        dos rotulos ou layout usados: nome do beneficiario e do prestador,
+        presenca de CPF do beneficiario e CPF/CNPJ do prestador sem reproduzir
+        esses numeros, registro profissional, data do atendimento, descricao,
+        valor total, moeda, assinatura ou carimbo e numero da sessao no ano.
+        Use null ou false quando o fato nao estiver efetivamente presente.
+
+        Para relatorio clinico, preencha `evidencia_relatorio` somente com os
+        campos efetivamente presentes: identificacoes, registro profissional,
+        data de emissao, periodo de acompanhamento, numero de sessoes no ano,
+        indicacao de manutencao e assinatura. Esses fatos sao evidencia
+        complementar e nao item de despesa. Para as demais categorias, retorne
+        `evidencia_relatorio=null`. A cobertura sera avaliada por outro agente.
+        Retorne somente a estrutura solicitada.
+
+        Documento:
+        """
+        + texto
+    )
+    return AnaliseConteudoDocumentalModel.model_validate(resultado)
 
 
 def analisar_documento(
@@ -165,7 +203,7 @@ def analisar_documento(
     *,
     nome_titular: str | None = None,
     ha_pedido_pendente: bool = False,
-    classificador: ClassificadorDocumento | None = None,
+    analisador: AnalisadorConteudoDocumental | None = None,
 ) -> FatosDocumentaisModel:
     """Produz fatos tipados; anexos invalidos nao seguem para decisao normativa."""
     extraido = extrair_texto(anexo)
@@ -177,35 +215,39 @@ def analisar_documento(
             aproveitavel=False,
             justificativa=extraido.erro or "nao foi possivel ler o arquivo",
         )
-    classificacao = (classificador or classificar_documento)(extraido.texto)
+    analise = (analisador or analisar_conteudo_documental)(extraido.texto)
+    classificacao = analise.classificacao
     categoria = classificacao.categoria
     if categoria == Categoria.INVALIDO:
         # Anexos sem natureza assistencial ficam fora das etapas normativa e decisoria.
         return FatosDocumentaisModel(
-            categoria=categoria,
+            categoria=Categoria.INVALIDO,
             natureza_medica=False,
             aproveitavel=False,
             justificativa=classificacao.justificativa,
         )
     if categoria == Categoria.RELATORIO_CLINICO:
         # Relatorios complementares seguem os requisitos proprios da NT-02.
-        pendencias = _pendencias_relatorio(extraido.texto, nome_titular)
+        pendencias = _pendencias_relatorio(
+            analise.dados_documento,
+            analise.evidencia_relatorio,
+            nome_titular,
+        )
     else:
         # Documentos fiscais usam os campos obrigatorios e condicionais da NT-02.
-        pendencias = _pendencias_fiscais(extraido.texto, categoria, nome_titular)
-    tuss = re.search(r"c[oó]digo tuss\s*:\s*(\d+)", extraido.texto, re.I)
-    descricao = re.search(r"(?:referente a|descri[cç][aã]o)\s*:\s*([^\n]+)", extraido.texto, re.I)
+        pendencias = _pendencias_fiscais(analise.dados_documento, categoria, nome_titular)
+    # Mesmo que o LLM misture os campos, relatorio permanece evidencia e nunca despesa.
     return FatosDocumentaisModel(
         categoria=categoria,
         natureza_medica=classificacao.natureza_medica,
         # Uma pendencia bloqueia a conclusao documental, mas preserva o pedido para complemento.
         aproveitavel=not pendencias,
         justificativa=classificacao.justificativa,
-        valor_solicitado_brl=None if categoria == Categoria.RELATORIO_CLINICO else _valor(extraido.texto),
-        data_atendimento=None if categoria == Categoria.RELATORIO_CLINICO else _data_atendimento(extraido.texto),
-        codigo_tuss=tuss.group(1) if tuss else None,
-        descricao_procedimento=descricao.group(1).strip() if descricao else None,
-        indicacao_clinica="indicacao clinica" in _texto_normalizado(extraido.texto),
+        dados_documento=analise.dados_documento,
+        itens=[] if categoria == Categoria.RELATORIO_CLINICO else analise.itens,
+        evidencia_relatorio=analise.evidencia_relatorio
+        if categoria == Categoria.RELATORIO_CLINICO
+        else None,
         pendencias=pendencias,
         relatorio_complementar=categoria == Categoria.RELATORIO_CLINICO and ha_pedido_pendente,
     )
