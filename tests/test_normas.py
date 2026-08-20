@@ -5,7 +5,7 @@ from decimal import Decimal
 import logging
 import unittest
 
-from app.agents.documento.models import FatosDocumentaisModel
+from app.agents.documento.models import ItemDocumentalModel
 from app.agents.normas import (
     AvaliacaoNormativaModel,
     FonteAfastadaModel,
@@ -71,11 +71,8 @@ class TesteNormas(unittest.TestCase):
         self.assertEqual(avaliacao.fontes_afastadas[0].motivo_afastamento, "Fora da vigencia da data-fato.")
 
     def test_anexo_invalido_nao_formula_consulta(self) -> None:
-        fatos = FatosDocumentaisModel(
+        fatos = ItemDocumentalModel(
             categoria=Categoria.INVALIDO,
-            natureza_medica=False,
-            aproveitavel=False,
-            justificativa="Arquivo sem natureza assistencial.",
         )
 
         self.assertIsNone(formular_consulta_normativa(fatos, "Quero reembolso"))
@@ -112,11 +109,8 @@ class TesteNormas(unittest.TestCase):
                     "justificativa": "As fontes vigentes chegam a conclusoes incompativeis.",
                 }
 
-        fatos = FatosDocumentaisModel(
+        fatos = ItemDocumentalModel(
             categoria=Categoria.CONSULTA_MEDICA,
-            natureza_medica=True,
-            aproveitavel=True,
-            justificativa="Recibo valido.",
             valor_solicitado_brl=Decimal("240"),
             data_atendimento=date(2026, 4, 30),
             descricao_procedimento="Consulta medica",
@@ -157,13 +151,13 @@ class TesteNormas(unittest.TestCase):
             "exige_limite_anual": True,
         }
         fatos = [
-            FatosDocumentaisModel(
-                categoria=Categoria.CONSULTA_MEDICA, natureza_medica=True, aproveitavel=True,
-                justificativa="ok", valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 4, 30),
+            ItemDocumentalModel(
+                categoria=Categoria.CONSULTA_MEDICA,
+                valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 4, 30),
             ),
-            FatosDocumentaisModel(
-                categoria=Categoria.CONSULTA_MEDICA, natureza_medica=True, aproveitavel=True,
-                justificativa="ok", valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 5, 1),
+            ItemDocumentalModel(
+                categoria=Categoria.CONSULTA_MEDICA,
+                valor_solicitado_brl=Decimal("200"), data_atendimento=date(2026, 5, 1),
             ),
         ]
         avaliacoes = [

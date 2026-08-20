@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from app.agents.documento.models import FatosDocumentaisModel
+from app.agents.documento.models import ItemDocumentalModel
 from app.agents.normas.models import (
     AvaliacaoNormativaModel,
     FonteAfastadaModel,
@@ -19,16 +19,16 @@ from app.schemas import Categoria
 LOG = logging.getLogger(__name__)
 
 
-def formular_consulta_normativa(fatos: FatosDocumentaisModel, pergunta: str) -> str | None:
+def formular_consulta_normativa(item: ItemDocumentalModel, pergunta: str) -> str | None:
     """Formula consulta somente com fatos aproveitaveis do documento."""
-    if fatos.categoria == Categoria.INVALIDO or not fatos.aproveitavel or not fatos.natureza_medica:
+    if item.categoria == Categoria.INVALIDO:
         return None
-    partes = [f"categoria {fatos.categoria.value}"]
-    if fatos.descricao_procedimento:
-        partes.append(f"procedimento {fatos.descricao_procedimento}")
-    if fatos.codigo_tuss:
-        partes.append(f"codigo TUSS {fatos.codigo_tuss}")
-    if fatos.indicacao_clinica:
+    partes = [f"categoria {item.categoria.value}"]
+    if item.descricao_procedimento:
+        partes.append(f"procedimento {item.descricao_procedimento}")
+    if item.codigo_tuss:
+        partes.append(f"codigo TUSS {item.codigo_tuss}")
+    if item.indicacao_clinica:
         partes.append("indicacao clinica expressa")
     if pergunta.strip():
         partes.append(f"pergunta do beneficiario {pergunta.strip()}")
@@ -36,24 +36,24 @@ def formular_consulta_normativa(fatos: FatosDocumentaisModel, pergunta: str) -> 
 
 
 def avaliar_normas_item(
-    fatos: FatosDocumentaisModel,
+    item: ItemDocumentalModel,
     pergunta: str,
     *,
     recuperador: RetrieverHibrido,
     llm: object | None = None,
 ) -> AvaliacaoNormativaModel:
     """Recupera e interpreta fontes sem permitir conclusoes fora da base."""
-    consulta = formular_consulta_normativa(fatos, pergunta)
+    consulta = formular_consulta_normativa(item, pergunta)
     if consulta is None:
         return AvaliacaoNormativaModel(
             consulta="fatos documentais insuficientes para consulta normativa",
-            pendencias=list(fatos.pendencias) or ["validacao documental"],
+            pendencias=["validacao documental"],
             justificativa="O anexo nao fornece fatos aproveitaveis para o RAG.",
         )
-    if fatos.data_atendimento is None:
+    if item.data_atendimento is None:
         return AvaliacaoNormativaModel(
             consulta=consulta,
-            pendencias=list(dict.fromkeys([*fatos.pendencias, "data do atendimento"])),
+            pendencias=["data do atendimento"],
             justificativa="A data-fato e obrigatoria para verificar a vigencia normativa.",
         )
 
@@ -68,22 +68,22 @@ def avaliar_normas_item(
         )
         for fonte in recuperador.recuperar(
             consulta,
-            data_atendimento=fatos.data_atendimento,
+            data_atendimento=item.data_atendimento,
             validar_relevancia=True,
         )
     ]
     if not recuperadas:
         return AvaliacaoNormativaModel(
             consulta=consulta,
-            data_fato=fatos.data_atendimento,
+            data_fato=item.data_atendimento,
             pendencias=["fundamentacao normativa"],
             justificativa="Nao foi encontrada fonte material vigente para os fatos documentais.",
         )
-    leitura = _ler_fontes(consulta, fatos.data_atendimento, recuperadas, llm)
+    leitura = _ler_fontes(consulta, item.data_atendimento, recuperadas, llm)
     aplicaveis, afastadas = _separar_fontes(recuperadas, leitura)
     avaliacao = AvaliacaoNormativaModel(
         consulta=consulta,
-        data_fato=fatos.data_atendimento,
+        data_fato=item.data_atendimento,
         fontes_recuperadas=recuperadas,
         fontes_aplicaveis=aplicaveis,
         fontes_afastadas=afastadas,
@@ -100,7 +100,7 @@ def avaliar_normas_item(
         LOG.warning(
             "conflito_normativo consulta=%r data_fato=%s citacoes=%s motivo=%r",
             consulta,
-            fatos.data_atendimento.isoformat(),
+            item.data_atendimento.isoformat(),
             [fonte.citacao for fonte in aplicaveis],
             leitura.justificativa,
         )
@@ -108,7 +108,7 @@ def avaliar_normas_item(
 
 
 def avaliar_normas_itens(
-    fatos_itens: list[FatosDocumentaisModel],
+    itens: list[ItemDocumentalModel],
     pergunta: str,
     *,
     recuperador: RetrieverHibrido,
@@ -116,14 +116,14 @@ def avaliar_normas_itens(
 ) -> list[AvaliacaoNormativaModel]:
     """Avalia cada item preservando categoria, data-fato e evidencia proprias."""
     return [
-        avaliar_normas_item(fatos, pergunta, recuperador=recuperador, llm=llm)
-        for fatos in fatos_itens
-        if fatos.categoria != Categoria.INVALIDO
+        avaliar_normas_item(item, pergunta, recuperador=recuperador, llm=llm)
+        for item in itens
+        if item.categoria != Categoria.INVALIDO
     ]
 
 
 def calcular_reembolsos_normativos(
-    fatos_itens: list[FatosDocumentaisModel],
+    itens: list[ItemDocumentalModel],
     avaliacoes: list[AvaliacaoNormativaModel],
     *,
     totais_reembolsados_ano: dict[int, object] | None = None,
@@ -133,7 +133,7 @@ def calcular_reembolsos_normativos(
 
     from app.calculo import calcular_total_reembolso, executar_calculo_normativo
 
-    if len(fatos_itens) != len(avaliacoes):
+    if len(itens) != len(avaliacoes):
         raise ValueError("fatos e avaliacoes devem conter a mesma quantidade de itens")
     acumulados = {
         ano: Decimal(str(valor))
@@ -141,15 +141,15 @@ def calcular_reembolsos_normativos(
     }
     valores: list[Decimal] = []
     pendencias: list[str] = []
-    for fatos, avaliacao in zip(fatos_itens, avaliacoes, strict=True):
+    for item, avaliacao in zip(itens, avaliacoes, strict=True):
         parametros = avaliacao.parametros_calculo
-        if fatos.valor_solicitado_brl is None or fatos.data_atendimento is None or parametros is None:
+        if item.valor_solicitado_brl is None or item.data_atendimento is None or parametros is None:
             pendencias.append("parametros insuficientes para calculo normativo")
             continue
-        ano = fatos.data_atendimento.year
+        ano = item.data_atendimento.year
         total_anterior = acumulados.get(ano)
         valor = executar_calculo_normativo(
-            fatos.valor_solicitado_brl,
+            item.valor_solicitado_brl,
             parametros,
             total_reembolsado_ano=total_anterior,
         )
@@ -161,7 +161,7 @@ def calcular_reembolsos_normativos(
             acumulados[ano] = (total_anterior or Decimal("0")) + valor
     return ResultadoCalculoNormativoModel(
         valores_itens_brl=valores,
-        valor_reembolso_brl=calcular_total_reembolso(valores) if len(valores) == len(fatos_itens) else None,
+        valor_reembolso_brl=calcular_total_reembolso(valores) if len(valores) == len(itens) else None,
         total_reembolsado_ano_brl=sum(acumulados.values(), Decimal("0")) if acumulados else None,
         pendencias=list(dict.fromkeys(pendencias)),
     )
