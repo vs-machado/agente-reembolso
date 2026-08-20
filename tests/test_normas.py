@@ -13,6 +13,7 @@ from app.agents.normas import (
     avaliar_normas_item,
     calcular_reembolsos_normativos,
     formular_consulta_normativa,
+    formular_consultas_normativas,
 )
 from app.rag import FonteModel
 from app.schemas import Categoria
@@ -86,6 +87,79 @@ class TesteNormas(unittest.TestCase):
         self.assertIsNotNone(consulta)
         self.assertIn("coparticipacao por plano e faixa de adesao", consulta)
         self.assertIn("considerar circulares", consulta)
+
+    def test_consultas_focadas_separam_assuntos_normativos(self) -> None:
+        consultas = formular_consultas_normativas(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, codigo_tuss="10101012"),
+            "plano Pleno e data de adesao 2025-09-01",
+        )
+
+        self.assertIsNotNone(consultas)
+        self.assertEqual(len(consultas), 4)
+        self.assertIn("cobertura do procedimento", consultas[0])
+        self.assertIn("circular vigente", consultas[1])
+        self.assertIn("limite anual", consultas[2])
+        self.assertIn("competencia da analise", consultas[3])
+
+    def test_funde_fontes_das_consultas_e_le_uma_vez(self) -> None:
+        class RecuperadorFalso:
+            def __init__(self) -> None:
+                self.consultas: list[str] = []
+
+            def recuperar(self, consulta, **_kwargs):
+                self.consultas.append(consulta)
+                return [
+                    FonteModel("Regra comum.", "Fonte comum", {}, 0.8, ("bm25",)),
+                    FonteModel(f"Regra {len(self.consultas)}.", f"Fonte {len(self.consultas)}", {}, 0.7, ("vetorial",)),
+                ]
+
+        class LlmFalso:
+            def __init__(self) -> None:
+                self.chamadas = 0
+
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _prompt):
+                self.chamadas += 1
+                return {"indices_aplicaveis": [1], "justificativa": "Leitura concluida."}
+
+        recuperador = RecuperadorFalso()
+        llm = LlmFalso()
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, data_atendimento=date(2026, 4, 30)),
+            "Tenho direito?",
+            recuperador=recuperador,
+            llm=llm,
+        )
+
+        self.assertEqual(len(recuperador.consultas), 4)
+        self.assertEqual(len(avaliacao.fontes_recuperadas), 5)
+        self.assertEqual(llm.chamadas, 1)
+
+    def test_fusao_limita_fontes_intercaladas(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, consulta, **_kwargs):
+                return [
+                    FonteModel(f"{consulta} {indice}", f"{consulta} {indice}", {}, 0.9, ("bm25",))
+                    for indice in range(10)
+                ]
+
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _prompt):
+                return {"indices_aplicaveis": [1], "justificativa": "Leitura concluida."}
+
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, data_atendimento=date(2026, 4, 30)),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=LlmFalso(),
+        )
+
+        self.assertEqual(len(avaliacao.fontes_recuperadas), 10)
 
     def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
         class RecuperadorFalso:

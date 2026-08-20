@@ -23,6 +23,7 @@ from app.agents.normas.services import (
     avaliar_normas_itens,
     calcular_reembolsos_normativos,
     formular_consulta_normativa,
+    formular_consultas_normativas,
 )
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     "avaliar_normas_itens",
     "calcular_reembolsos_normativos",
     "formular_consulta_normativa",
+    "formular_consultas_normativas",
 ]

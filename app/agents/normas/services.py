@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from itertools import zip_longest
 
 from app.agents.documento.models import ItemDocumentalModel
 from app.agents.normas.models import (
@@ -42,6 +43,53 @@ def formular_consulta_normativa(item: ItemDocumentalModel, pergunta: str) -> str
     return "; ".join(partes)
 
 
+def formular_consultas_normativas(item: ItemDocumentalModel, pergunta: str) -> list[str] | None:
+    """Divide a recuperacao por assunto para preservar fontes complementares."""
+    if item.categoria == Categoria.INVALIDO:
+        return None
+    fatos_procedimento = [f"categoria {item.categoria.value}"]
+    if item.descricao_procedimento:
+        fatos_procedimento.append(f"procedimento {item.descricao_procedimento}")
+    if item.codigo_tuss:
+        fatos_procedimento.append(f"codigo TUSS {item.codigo_tuss}")
+    if item.indicacao_clinica:
+        fatos_procedimento.append("indicacao clinica expressa")
+    contexto_procedimento = "; ".join(fatos_procedimento)
+    contexto_cadastral = pergunta.strip() or "dados cadastrais do beneficiario"
+    return [
+        f"{contexto_procedimento}; cobertura do procedimento, codigo TUSS, carencia e teto em URS",
+        f"{contexto_cadastral}; valor da URS, art. 43, art. 44, coparticipacao por plano e faixa de adesao, circular vigente e ordem de calculo",
+        f"{contexto_cadastral}; art. 45, limite anual de reembolso e necessidade de historico anual",
+        f"{contexto_procedimento}; art. 78, competencia da analise automatizada e alcada",
+    ]
+
+
+def _fundir_fontes_recuperadas(
+    fontes_por_consulta: list[list[FonteNormativaModel]],
+    limite: int = 10,
+) -> list[FonteNormativaModel]:
+    """Intercala rankings focados e conserva uma unica fonte por citacao."""
+    fontes: dict[str, FonteNormativaModel] = {}
+    for grupo in zip_longest(*fontes_por_consulta):
+        for fonte in grupo:
+            if fonte is None:
+                continue
+            existente = fontes.get(fonte.citacao)
+            if existente is None:
+                fontes[fonte.citacao] = fonte
+                continue
+            fontes[fonte.citacao] = existente.model_copy(
+                update={
+                    "score": max(existente.score, fonte.score),
+                    "origens": tuple(sorted(set(existente.origens) | set(fonte.origens))),
+                    "score_llm": max(valor for valor in (existente.score_llm, fonte.score_llm) if valor is not None)
+                    if existente.score_llm is not None or fonte.score_llm is not None
+                    else None,
+                }
+            )
+    return list(fontes.values())[:limite]
+
+
 def avaliar_normas_item(
     item: ItemDocumentalModel,
     pergunta: str,
@@ -50,8 +98,8 @@ def avaliar_normas_item(
     llm: object | None = None,
 ) -> AvaliacaoNormativaModel:
     """Recupera e interpreta fontes sem permitir conclusoes fora da base."""
-    consulta = formular_consulta_normativa(item, pergunta)
-    if consulta is None:
+    consultas = formular_consultas_normativas(item, pergunta)
+    if consultas is None:
         return AvaliacaoNormativaModel(
             consulta="fatos documentais insuficientes para consulta normativa",
             pendencias=["validacao documental"],
@@ -59,27 +107,30 @@ def avaliar_normas_item(
         )
     if item.data_atendimento is None:
         return AvaliacaoNormativaModel(
-            consulta=consulta,
+            consulta="\n".join(consultas),
             pendencias=["data do atendimento"],
             justificativa="A data-fato e obrigatoria para verificar a vigencia normativa.",
         )
 
-    recuperadas = [
-        FonteNormativaModel(
-            texto=fonte.texto,
-            citacao=fonte.citacao,
-            metadados=fonte.metadados,
-            score=fonte.score,
-            origens=fonte.origens,
-            score_llm=fonte.score_llm,
-        )
-        for fonte in recuperador.recuperar(
-            consulta,
-            data_atendimento=item.data_atendimento,
-            limite=10,
-            validar_relevancia=True,
-        )
-    ]
+    recuperadas = _fundir_fontes_recuperadas([
+        [
+            FonteNormativaModel(
+                texto=fonte.texto,
+                citacao=fonte.citacao,
+                metadados=fonte.metadados,
+                score=fonte.score,
+                origens=fonte.origens,
+                score_llm=fonte.score_llm,
+            )
+            for fonte in recuperador.recuperar(
+                consulta,
+                data_atendimento=item.data_atendimento,
+                limite=10,
+            )
+        ]
+        for consulta in consultas
+    ])
+    consulta = "\n".join(consultas)
     if not recuperadas:
         return AvaliacaoNormativaModel(
             consulta=consulta,
