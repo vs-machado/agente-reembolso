@@ -170,6 +170,50 @@ class TesteNormas(unittest.TestCase):
         self.assertEqual(resultado.valores_itens_brl, [Decimal("150"), Decimal("0")])
         self.assertEqual(resultado.valor_reembolso_brl, Decimal("150.00"))
 
+    def test_descarta_alcada_citada_por_fonte_nao_aplicavel(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *args, **kwargs):
+                return [
+                    FonteModel("Regra aplicavel.", "Fonte A", {}, 0.9, ("bm25",)),
+                    FonteModel("Regra afastada.", "Fonte B", {}, 0.8, ("vetorial",)),
+                ]
+
+        class LlmFalso:
+            def with_structured_output(self, schema):
+                return self
+
+            def invoke(self, prompt: str):
+                return {
+                    "indices_aplicaveis": [1],
+                    "resultado_elegibilidade": True,
+                    "avaliacao_alcada": {
+                        "exige_analista": False,
+                        "permite_calculo": True,
+                        "justificativa": "Conclusao apoiada apenas na fonte afastada.",
+                        "indices_fontes": [2],
+                    },
+                    "justificativa": "Leitura concluida.",
+                }
+
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(
+                categoria=Categoria.CONSULTA_MEDICA,
+                valor_solicitado_brl=Decimal("100"),
+                data_atendimento=date(2026, 4, 30),
+            ),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=LlmFalso(),
+        )
+
+        self.assertIsNotNone(avaliacao.avaliacao_alcada)
+        self.assertIsNone(avaliacao.avaliacao_alcada.exige_analista)
+        self.assertIsNone(avaliacao.avaliacao_alcada.permite_calculo)
+        self.assertIn(
+            "fundamentacao normativa da alcada",
+            avaliacao.avaliacao_alcada.pendencias,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

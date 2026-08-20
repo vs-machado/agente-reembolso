@@ -7,6 +7,7 @@ from datetime import date
 
 from app.agents.documento.models import ItemDocumentalModel
 from app.agents.normas.models import (
+    AvaliacaoAlcadaModel,
     AvaliacaoNormativaModel,
     FonteAfastadaModel,
     FonteNormativaModel,
@@ -32,6 +33,7 @@ def formular_consulta_normativa(item: ItemDocumentalModel, pergunta: str) -> str
         partes.append("indicacao clinica expressa")
     if pergunta.strip():
         partes.append(f"pergunta do beneficiario {pergunta.strip()}")
+    partes.append("regras vigentes de competencia da analise automatizada e alcada")
     return "; ".join(partes)
 
 
@@ -81,6 +83,7 @@ def avaliar_normas_item(
         )
     leitura = _ler_fontes(consulta, item.data_atendimento, recuperadas, llm)
     aplicaveis, afastadas = _separar_fontes(recuperadas, leitura)
+    avaliacao_alcada = _validar_avaliacao_alcada(leitura, recuperadas)
     avaliacao = AvaliacaoNormativaModel(
         consulta=consulta,
         data_fato=item.data_atendimento,
@@ -92,6 +95,7 @@ def avaliar_normas_item(
         ha_conflito_material=leitura.ha_conflito_material,
         regras_aplicaveis=leitura.regras_aplicaveis,
         parametros_calculo=leitura.parametros_calculo,
+        avaliacao_alcada=avaliacao_alcada,
         resultado_elegibilidade=None if leitura.ha_conflito_material else leitura.resultado_elegibilidade,
         justificativa=leitura.justificativa,
     )
@@ -182,10 +186,16 @@ def _ler_fontes(
         for indice, fonte in enumerate(fontes, start=1)
     )
     resultado = llm.with_structured_output(LeituraNormativaModel).invoke(
-        "Avalie a elegibilidade somente com as fontes fornecidas. Nao invente "
+        "Avalie elegibilidade, calculo e competencia decisoria somente com as fontes fornecidas. Nao invente "
         "regras, valores, dispositivos ou criterios de desempate. Indique apenas "
         "indices existentes. Extraia parametros_calculo apenas quando o valor e "
-        "o dispositivo estiverem explicitamente nas fontes. Quando fontes materiais conflitarem, marque "
+        "o dispositivo estiverem explicitamente nas fontes. Em `avaliacao_alcada`, "
+        "avalie os fatos do item contra as regras vigentes que definem se a analise "
+        "automatizada pode decidir. Nao use limites ou motivos memorizados: cite os "
+        "indices das fontes que sustentam a conclusao. Identifique `item_sob_analise` "
+        "somente quando a Tabela URS aplicavel trouxer essa classificacao. Quando nao "
+        "houver fonte suficiente, deixe `exige_analista` e `permite_calculo` nulos. "
+        "Quando fontes materiais conflitarem, marque "
         "ha_conflito_material=true e resultado_elegibilidade=null.\n\n"
         f"DATA-FATO: {data_fato.isoformat()}\nCONSULTA: {consulta}\n\n{candidatos}"
     )
@@ -207,3 +217,38 @@ def _separar_fontes(
         if indice not in indices_aplicaveis
     ]
     return aplicaveis, afastadas
+
+
+def _validar_avaliacao_alcada(
+    leitura: LeituraNormativaModel,
+    fontes_recuperadas: list[FonteNormativaModel],
+) -> AvaliacaoAlcadaModel | None:
+    """Aceita conclusao de alcada apenas quando ela referencia fonte aplicavel."""
+    alcada = leitura.avaliacao_alcada
+    if alcada is None:
+        return None
+    indices_aplicaveis = {
+        indice
+        for indice in leitura.indices_aplicaveis
+        if 1 <= indice <= len(fontes_recuperadas)
+    }
+    indices = sorted(
+        {
+            indice
+            for indice in alcada.indices_fontes
+            if indice in indices_aplicaveis
+        }
+    )
+    if leitura.ha_conflito_material or not indices:
+        pendencias = list(alcada.pendencias)
+        pendencias.append("fundamentacao normativa da alcada")
+        return AvaliacaoAlcadaModel(
+            exige_analista=None,
+            permite_calculo=None,
+            item_sob_analise=alcada.item_sob_analise,
+            justificativa=alcada.justificativa,
+            regras_aplicaveis=alcada.regras_aplicaveis,
+            indices_fontes=indices,
+            pendencias=list(dict.fromkeys(pendencias)),
+        )
+    return alcada.model_copy(update={"indices_fontes": indices})

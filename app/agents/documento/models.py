@@ -4,10 +4,23 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
 from app.schemas import Categoria
+
+
+class NaturezaProcedimentoEnum(str, Enum):
+    """Natureza documental interna, sem ampliar o contrato HTTP de categorias."""
+
+    CONSULTA = "CONSULTA"
+    EXAME = "EXAME"
+    TERAPIA = "TERAPIA"
+    RELATORIO_CLINICO = "RELATORIO_CLINICO"
+    CIRURGICO_HOSPITALAR = "CIRURGICO_HOSPITALAR"
+    MATERIAL_OPME = "MATERIAL_OPME"
+    OUTRA = "OUTRA"
 
 
 class TextoExtraidoModel(BaseModel):
@@ -26,6 +39,7 @@ class ItemDocumentalModel(BaseModel):
     """Fatos de uma despesa individual discriminada no documento."""
 
     categoria: Categoria
+    natureza_procedimento: NaturezaProcedimentoEnum | None = None
     valor_original: Decimal | None = None
     codigo_moeda_iso: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     valor_solicitado_brl: Decimal | None = None

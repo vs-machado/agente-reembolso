@@ -10,6 +10,7 @@ Cuidado com três coisas que a base cobra:
 """
 
 from app.agents.normas.models import (
+    AvaliacaoAlcadaModel,
     AvaliacaoNormativaModel,
     FonteAfastadaModel,
     FonteNormativaModel,
@@ -25,6 +26,7 @@ from app.agents.normas.services import (
 )
 
 __all__ = [
+    "AvaliacaoAlcadaModel",
     "AvaliacaoNormativaModel",
     "FonteAfastadaModel",
     "FonteNormativaModel",

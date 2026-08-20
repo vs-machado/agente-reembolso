@@ -168,6 +168,9 @@ def analisar_conteudo_documental(
 
         Para documento fiscal valido, extraia somente procedimentos ou sessoes
         com valor individualizado. Preserve a categoria propria de cada item,
+        e identifique sua natureza assistencial interna. Use
+        `CIRURGICO_HOSPITALAR` somente quando o documento trouxer esse fato e
+        `MATERIAL_OPME` para material, ortese, protese ou material especial.
         inclusive quando houver categorias diferentes no mesmo documento. Nao
         divida valor global, nao estime valores e nao invente datas, codigos ou
         indicacoes clinicas. Para cada valor, preserve `valor_original` e o

@@ -7,6 +7,7 @@ from app.agents.documento.models import (
     EvidenciaRelatorioClinicoModel,
     FatosDocumentaisModel,
     ItemDocumentalModel,
+    NaturezaProcedimentoEnum,
     TextoExtraidoModel,
 )
 from app.agents.documento.services import (
@@ -23,6 +24,7 @@ __all__ = [
     "EvidenciaRelatorioClinicoModel",
     "FatosDocumentaisModel",
     "ItemDocumentalModel",
+    "NaturezaProcedimentoEnum",
     "TextoExtraidoModel",
     "analisar_conteudo_documental",
     "analisar_documento",
