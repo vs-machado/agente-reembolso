@@ -32,6 +32,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from app.tools.cotacao import CotacaoPtaxModel, consultar_cotacao_ptax
+from app.tools.ocr import extrair_texto_imagem
 
 
 class ErroMcp(RuntimeError):
@@ -118,4 +119,5 @@ __all__ = [
     "ErroMcp",
     "ResultadoMcp",
     "consultar_cotacao_ptax",
+    "extrair_texto_imagem",
 ]

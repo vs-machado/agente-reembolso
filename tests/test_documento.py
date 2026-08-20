@@ -4,6 +4,7 @@ import base64
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from app.agents.documento import (
     AnaliseConteudoDocumentalModel,
@@ -130,6 +131,21 @@ class TesteDocumento(unittest.TestCase):
 
         self.assertIsNone(texto.erro)
         self.assertIn("Consulta m", texto.texto)
+
+    @patch("app.agents.documento.services.extrair_texto_imagem")
+    def test_extrai_imagem_com_a_ferramenta_ocr(self, extrator_falso) -> None:
+        extrator_falso.return_value = "RECIBO MEDICO"
+        anexo = Anexo(
+            filename="recibo.png",
+            mime_type="image/png",
+            base64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL1qAAAAABJRU5ErkJggg==",
+        )
+
+        texto = extrair_texto(anexo)
+
+        self.assertEqual(texto.texto, "RECIBO MEDICO")
+        self.assertEqual(texto.paginas, 1)
+        extrator_falso.assert_called_once()
 
     def test_bloqueia_conta_de_energia(self) -> None:
         resultado = analisar_documento(

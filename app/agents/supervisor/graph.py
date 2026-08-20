@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import date
 from enum import Enum
 from threading import RLock
 from typing import Any
@@ -33,11 +34,11 @@ from app.agents.triagem import (
     gerar_resposta_triagem,
     normalizar_carteirinha,
 )
-from app.calculo import somar_reembolsos_ano
+from app.calculo import converter_moeda, somar_reembolsos_ano
 from app.guardrails import revisar_resposta_beneficiario, validar_pedido_terceiro
 from app.rag import RetrieverHibrido
 from app.schemas import Anexo, Categoria, ChatRequest, ChatResponse, Decisao
-from app.tools import ClienteMcp
+from app.tools import ClienteMcp, CotacaoPtaxModel, consultar_cotacao_ptax
 
 LIMITE_PASSOS_TURNO = 12
 
@@ -94,6 +95,7 @@ RevisorResposta = Callable[[str], str]
 AnalisadorDocumento = Callable[..., FatosDocumentaisModel]
 AvaliadorNormas = Callable[[list[ItemDocumentalModel], str], list[AvaliacaoNormativaModel]]
 CalculadorNormas = Callable[..., ResultadoCalculoNormativoModel]
+ConsultorCotacao = Callable[[str, date], CotacaoPtaxModel | None]
 RoteadorSupervisor = Callable[
     [dict[str, Any], list[AcaoSupervisorEnum]], AcaoSupervisorEnum
 ]
@@ -246,6 +248,54 @@ def _exige_historico(avaliacoes: list[AvaliacaoNormativaModel]) -> bool:
         avaliacao.parametros_calculo and avaliacao.parametros_calculo.exige_limite_anual
         for avaliacao in avaliacoes
     )
+
+
+def _converter_documentos_para_brl(
+    documentos: list[dict[str, Any]],
+    consultar_cotacao: ConsultorCotacao,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Converte somente despesas estrangeiras com a PTAX da data-fato."""
+    atualizados: list[dict[str, Any]] = []
+    pendencias: list[str] = []
+    for registro in documentos:
+        fatos = FatosDocumentaisModel.model_validate(registro["fatos"])
+        itens: list[ItemDocumentalModel] = []
+        alterado = False
+        for item in fatos.itens:
+            moeda = item.codigo_moeda_iso
+            if (
+                item.valor_solicitado_brl is not None
+                or item.valor_original is None
+                or moeda in {None, "BRL"}
+                or item.data_atendimento is None
+            ):
+                itens.append(item)
+                continue
+            try:
+                cotacao = consultar_cotacao(moeda, item.data_atendimento)
+            except Exception:
+                cotacao = None
+            if cotacao is None:
+                pendencias.append(f"cotacao PTAX para {moeda}")
+                itens.append(item)
+                continue
+            itens.append(
+                item.model_copy(
+                    update={
+                        "valor_solicitado_brl": converter_moeda(
+                            item.valor_original, cotacao.cotacao_venda
+                        )
+                    }
+                )
+            )
+            alterado = True
+        if alterado:
+            atualizados.append(
+                {**registro, "fatos": fatos.model_copy(update={"itens": itens}).model_dump(mode="json")}
+            )
+        else:
+            atualizados.append(registro)
+    return atualizados, list(dict.fromkeys(pendencias))
 
 
 def _acoes_disponiveis(estado: EstadoSupervisor) -> list[AcaoSupervisorEnum]:
@@ -423,6 +473,7 @@ def executar_normas(
     avaliador: AvaliadorNormas,
     calculador: CalculadorNormas,
     cliente_mcp: ClienteMcp,
+    consultar_cotacao: ConsultorCotacao,
 ) -> dict[str, Any]:
     """Atualiza fontes vigentes e revisita calculo somente apos elegibilidade."""
     documento = _documento_base(estado)
@@ -478,6 +529,21 @@ def executar_normas(
         for competencia in competencias
     ):
         return {"calculo_normas_revisao": estado.get("normas_revisao", 0)}
+    documentos, pendencias_cotacao = _converter_documentos_para_brl(
+        list(estado.get("documentos_validos", [])), consultar_cotacao
+    )
+    if pendencias_cotacao:
+        return {
+            "calculo_normativo": ResultadoCalculoNormativoModel(
+                pendencias=pendencias_cotacao
+            ).model_dump(mode="json"),
+            "calculo_normas_revisao": estado.get("normas_revisao", 0),
+        }
+    if documentos != estado.get("documentos_validos", []):
+        atualizacoes["documentos_validos"] = documentos
+        documento = _documento_base({**estado, "documentos_validos": documentos})
+        if documento is None:
+            return atualizacoes
     totais = {
         item.data_atendimento.year: somar_reembolsos_ano(historico, item.data_atendimento.year)
         for item in documento.itens
@@ -659,6 +725,7 @@ def _compilar(
     analisador: AnalisadorDocumento,
     avaliador: AvaliadorNormas,
     calculador: CalculadorNormas,
+    consultar_cotacao: ConsultorCotacao,
     roteador: RoteadorSupervisor,
 ):
     grafo = StateGraph(EstadoSupervisor)
@@ -673,7 +740,9 @@ def _compilar(
     grafo.add_node("documento", lambda estado: executar_documento(estado, analisador))
     grafo.add_node(
         "normas",
-        lambda estado: executar_normas(estado, avaliador, calculador, cliente_mcp),
+        lambda estado: executar_normas(
+            estado, avaliador, calculador, cliente_mcp, consultar_cotacao
+        ),
     )
     grafo.add_node(
         "responder",
@@ -706,6 +775,7 @@ class Supervisor:
         analisador_documento: AnalisadorDocumento = analisar_documento,
         avaliador_normas: AvaliadorNormas | None = None,
         calculador_normas: CalculadorNormas = calcular_reembolsos_normativos,
+        consultor_cotacao: ConsultorCotacao = consultar_cotacao_ptax,
         roteador: RoteadorSupervisor = escolher_proxima_acao,
         recuperador_factory: Callable[[], RetrieverHibrido] = RetrieverHibrido,
     ) -> None:
@@ -718,6 +788,7 @@ class Supervisor:
         self._revisor_resposta = revisor_resposta
         self._analisador_documento = analisador_documento
         self._calculador_normas = calculador_normas
+        self._consultor_cotacao = consultor_cotacao
         self._roteador = roteador
         self._recuperador_factory = recuperador_factory
         self._recuperador: RetrieverHibrido | None = None
@@ -742,6 +813,7 @@ class Supervisor:
             self._analisador_documento,
             self._avaliador_normas,
             self._calculador_normas,
+            self._consultor_cotacao,
             self._roteador,
         )
 

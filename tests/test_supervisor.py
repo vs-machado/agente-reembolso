@@ -17,7 +17,7 @@ from app.agents.supervisor import AcaoSupervisorEnum, Supervisor
 from app.agents.triagem import ExtracaoTriagemModel
 from app.guardrails import identificar_pedido_terceiro
 from app.schemas import ChatRequest, Decisao
-from app.tools import ResultadoMcp
+from app.tools import CotacaoPtaxModel, ResultadoMcp
 
 
 class ClienteMcpSupervisorFalso:
@@ -323,6 +323,94 @@ class TesteSupervisorMultiagente(unittest.TestCase):
         self.assertEqual(tentativas, 2)
         self.assertEqual(segunda.decisao, Decisao.APROVADO)
         self.assertEqual(segunda.valor_reembolso_brl, Decimal("100"))
+
+    def test_converte_despesa_estrangeira_com_a_tool_ptax_antes_do_calculo(self) -> None:
+        cotacoes: list[tuple[str, date]] = []
+
+        def analisar(*args, **kwargs) -> FatosDocumentaisModel:
+            return FatosDocumentaisModel(
+                categoria="CONSULTA_MEDICA",
+                natureza_medica=True,
+                aproveitavel=True,
+                justificativa="Recibo valido em moeda estrangeira.",
+                itens=[
+                    ItemDocumentalModel(
+                        categoria="CONSULTA_MEDICA",
+                        valor_original=Decimal("100"),
+                        codigo_moeda_iso="USD",
+                        data_atendimento=date(2026, 5, 10),
+                    )
+                ],
+            )
+
+        def avaliar(itens, pergunta):
+            fonte = fonte_normativa_falsa()
+            return [
+                AvaliacaoNormativaModel(
+                    consulta="consulta medica",
+                    ha_fonte_suficiente=True,
+                    vigencia_confirmada=True,
+                    fontes_recuperadas=[fonte],
+                    fontes_aplicaveis=[fonte],
+                    resultado_elegibilidade=True,
+                    parametros_calculo=ParametrosCalculoNormativoModel(
+                        teto_urs=Decimal("100"),
+                        valor_urs_brl=Decimal("10"),
+                        coparticipacao_percentual=Decimal("0"),
+                    ),
+                    avaliacao_alcada=AvaliacaoAlcadaModel(
+                        exige_analista=False,
+                        permite_calculo=True,
+                        justificativa="A fonte autoriza decisao automatizada.",
+                        indices_fontes=[1],
+                    ),
+                    justificativa="Aplicavel.",
+                )
+            ]
+
+        def consultar_cotacao(moeda: str, data_atendimento: date) -> CotacaoPtaxModel:
+            cotacoes.append((moeda, data_atendimento))
+            return CotacaoPtaxModel(
+                moeda=moeda,
+                cotacao_venda=Decimal("5"),
+                data_cotacao=data_atendimento,
+                url_consultada="https://bcb.gov.br/ptax",
+            )
+
+        supervisor = Supervisor(
+            cliente_mcp=ClienteMcpSupervisorFalso(),
+            extrator_triagem=extrair_triagem_falsa,
+            gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
+            analisador_documento=analisar,
+            avaliador_normas=avaliar,
+            consultor_cotacao=consultar_cotacao,
+            roteador=lambda resumo, acoes: (
+                AcaoSupervisorEnum.NORMAS
+                if AcaoSupervisorEnum.NORMAS in acoes
+                else acoes[0]
+            ),
+        )
+
+        resposta = supervisor.responder(
+            ChatRequest.model_validate(
+                {
+                    "session_id": "moeda-estrangeira",
+                    "mensagem": "Quero reembolso, carteirinha 1234",
+                    "anexo": {
+                        "filename": "consulta-usd.pdf",
+                        "mime_type": "application/pdf",
+                        "base64": "cGRm",
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(cotacoes, [("USD", date(2026, 5, 10))])
+        self.assertEqual(resposta.valor_solicitado_brl, Decimal("500"))
+        self.assertEqual(resposta.valor_reembolso_brl, Decimal("500"))
+        self.assertEqual(resposta.decisao, Decisao.APROVADO)
 
 
 if __name__ == "__main__":

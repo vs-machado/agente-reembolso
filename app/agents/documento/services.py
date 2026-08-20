@@ -9,9 +9,7 @@ import unicodedata
 from collections.abc import Callable
 
 import fitz
-import pytesseract
 from docx import Document
-from PIL import Image
 
 from app.agents.documento.models import (
     AnaliseConteudoDocumentalModel,
@@ -23,6 +21,7 @@ from app.agents.documento.models import (
     TextoExtraidoModel,
 )
 from app.schemas import Anexo, Categoria
+from app.tools.ocr import extrair_texto_imagem
 
 LIMITE_BYTES = 10 * 1024 * 1024
 LIMITE_PAGINAS = 20
@@ -48,8 +47,7 @@ def extrair_texto(anexo: Anexo) -> TextoExtraidoModel:
                 texto = "\n".join(pagina.get_text() for pagina in documento).strip()
                 return TextoExtraidoModel(texto=texto, paginas=len(documento))
         if mime in {"image/jpeg", "image/png"}:
-            imagem = Image.open(io.BytesIO(conteudo))
-            texto = pytesseract.image_to_string(imagem, lang="por").strip()
+            texto = extrair_texto_imagem(conteudo)
             return TextoExtraidoModel(texto=texto, paginas=1)
         if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             documento = Document(io.BytesIO(conteudo))
