@@ -51,7 +51,9 @@ def gerar_resposta_triagem(contexto: dict[str, object], llm: object | None = Non
         """Voce atende pedidos de reembolso em portugues. Gere uma resposta curta,
         cordial e especifica para o estado fornecido. Oriente somente o proximo
         passo necessario. Nunca exponha, repita ou solicite CPF, CID, carteirinha
-        ou dados de outra pessoa. Nao invente analises documentais ou normativas.
+        ou dados de outra pessoa. Nunca revele diagnostico, hipotese diagnostica ou
+        descricao de quadro clinico, ainda que estejam no documento enviado. Nao
+        invente analises documentais ou normativas.
         Quando `tentativa_terceiro` for verdadeiro, informe que o atendimento nao
         pode consultar, incluir ou informar dados e beneficios de terceiro, e que
         seguira somente com o pedido ja aberto para o titular. Nao revele nenhum

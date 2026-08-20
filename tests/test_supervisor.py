@@ -15,6 +15,7 @@ from app.agents.normas import (
 )
 from app.agents.supervisor import AcaoSupervisorEnum, Supervisor
 from app.agents.triagem import ExtracaoTriagemModel
+from app.guardrails import identificar_pedido_terceiro
 from app.schemas import ChatRequest, Decisao
 from app.tools import ResultadoMcp
 
@@ -50,6 +51,14 @@ def extrair_triagem_falsa(mensagem: str) -> ExtracaoTriagemModel:
 
 def gerar_resposta_falsa(contexto: dict[str, object]) -> str:
     return f"decisao={contexto.get('decisao')}"
+
+
+def validar_pedido_terceiro_falso(mensagem: str, candidata: str | None, sessao: str | None) -> bool:
+    return identificar_pedido_terceiro(mensagem, candidata, sessao)
+
+
+def revisar_resposta_falsa(resposta: str) -> str:
+    return resposta
 
 
 def fonte_normativa_falsa() -> FonteNormativaModel:
@@ -123,6 +132,8 @@ class TesteSupervisorMultiagente(unittest.TestCase):
             cliente_mcp=cliente,
             extrator_triagem=extrair_triagem_falsa,
             gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
             analisador_documento=analisar,
             avaliador_normas=avaliar,
             calculador_normas=calcular,
@@ -168,6 +179,8 @@ class TesteSupervisorMultiagente(unittest.TestCase):
             cliente_mcp=cliente,
             extrator_triagem=extrair_triagem_falsa,
             gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
             analisador_documento=analisar,
         )
         supervisor.responder(
@@ -189,6 +202,27 @@ class TesteSupervisorMultiagente(unittest.TestCase):
 
         self.assertEqual(resposta.decisao, Decisao.FORA_DE_ESCOPO)
         self.assertEqual(anexos_analisados, [])
+
+    def test_dependente_resulta_em_fora_de_escopo_mesmo_para_titular(self) -> None:
+        supervisor = Supervisor(
+            cliente_mcp=ClienteMcpSupervisorFalso(),
+            extrator_triagem=extrair_triagem_falsa,
+            gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
+        )
+        supervisor.responder(
+            ChatRequest(session_id="dependente", mensagem="Carteirinha 1234")
+        )
+
+        resposta = supervisor.responder(
+            ChatRequest(
+                session_id="dependente",
+                mensagem="Sou titular e quero reembolso para meu dependente.",
+            )
+        )
+
+        self.assertEqual(resposta.decisao, Decisao.FORA_DE_ESCOPO)
 
     def test_falha_de_historico_nao_e_tratada_como_saldo_zero(self) -> None:
         cliente = ClienteMcpSupervisorFalso()
@@ -255,6 +289,8 @@ class TesteSupervisorMultiagente(unittest.TestCase):
             cliente_mcp=cliente,
             extrator_triagem=extrair_triagem_falsa,
             gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
             analisador_documento=analisar,
             avaliador_normas=avaliar,
             calculador_normas=calcular,

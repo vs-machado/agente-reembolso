@@ -34,6 +34,7 @@ from app.agents.triagem import (
     normalizar_carteirinha,
 )
 from app.calculo import somar_reembolsos_ano
+from app.guardrails import revisar_resposta_beneficiario, validar_pedido_terceiro
 from app.rag import RetrieverHibrido
 from app.schemas import Anexo, Categoria, ChatRequest, ChatResponse, Decisao
 from app.tools import ClienteMcp
@@ -88,6 +89,8 @@ class EstadoSupervisor(MessagesState, total=False):
 
 ExtratorTriagem = Callable[[str], ExtracaoTriagemModel]
 GeradorResposta = Callable[[dict[str, object]], str]
+ValidadorPedidoTerceiro = Callable[[str, str | None, str | None], bool]
+RevisorResposta = Callable[[str], str]
 AnalisadorDocumento = Callable[..., FatosDocumentaisModel]
 AvaliadorNormas = Callable[[list[ItemDocumentalModel], str], list[AvaliacaoNormativaModel]]
 CalculadorNormas = Callable[..., ResultadoCalculoNormativoModel]
@@ -282,6 +285,7 @@ def executar_triagem(
     estado: EstadoSupervisor,
     extrator: ExtratorTriagem,
     cliente_mcp: ClienteMcp,
+    validador_pedido_terceiro: ValidadorPedidoTerceiro,
 ) -> dict[str, Any]:
     """Atualiza conversa, cadastro e elegibilidade sem assumir ordem dos demais agentes."""
     triagem = dict(estado.get("triagem", {}))
@@ -294,8 +298,8 @@ def executar_triagem(
         extracao = extrator(str(mensagem.content))
         candidata = normalizar_carteirinha(extracao.carteirinha or "") or None
         titular = triagem.get("carteirinha_titular")
-        pedido_terceiro = bool(extracao.tentativa_terceiro) or bool(
-            candidata and titular and candidata != titular
+        pedido_terceiro = bool(extracao.tentativa_terceiro) or validador_pedido_terceiro(
+            str(mensagem.content), candidata, titular
         )
         resultado = ResultadoTriagemModel(
             intencao=extracao.intencao,
@@ -595,6 +599,7 @@ def _consolidar(estado: EstadoSupervisor) -> dict[str, Any]:
 def responder_turno(
     estado: EstadoSupervisor,
     gerador: GeradorResposta,
+    revisor_resposta: RevisorResposta,
     cliente_mcp: ClienteMcp,
 ) -> dict[str, Any]:
     """Consolida fontes tipadas e executa protocolo somente apos alcada normativa."""
@@ -635,7 +640,7 @@ def responder_turno(
         "tentativa_terceiro": bool(estado.get("pedido_terceiro_atual")),
         "conflito_normativo": bool(triagem.get("conflito_normativo")),
     }
-    texto = gerador(contexto)
+    texto = revisor_resposta(gerador(contexto))
     resposta = ChatResponse(resposta=texto, protocolo=protocolo, **dados)
     return {
         "messages": [AIMessage(content=texto)],
@@ -649,6 +654,8 @@ def _compilar(
     cliente_mcp: ClienteMcp,
     extrator: ExtratorTriagem,
     gerador: GeradorResposta,
+    validador_pedido_terceiro: ValidadorPedidoTerceiro,
+    revisor_resposta: RevisorResposta,
     analisador: AnalisadorDocumento,
     avaliador: AvaliadorNormas,
     calculador: CalculadorNormas,
@@ -657,13 +664,21 @@ def _compilar(
     grafo = StateGraph(EstadoSupervisor)
     grafo.add_node("preparar_turno", preparar_turno)
     grafo.add_node("coordenar", lambda estado: coordenar(estado, roteador))
-    grafo.add_node("triagem", lambda estado: executar_triagem(estado, extrator, cliente_mcp))
+    grafo.add_node(
+        "triagem",
+        lambda estado: executar_triagem(
+            estado, extrator, cliente_mcp, validador_pedido_terceiro
+        ),
+    )
     grafo.add_node("documento", lambda estado: executar_documento(estado, analisador))
     grafo.add_node(
         "normas",
         lambda estado: executar_normas(estado, avaliador, calculador, cliente_mcp),
     )
-    grafo.add_node("responder", lambda estado: responder_turno(estado, gerador, cliente_mcp))
+    grafo.add_node(
+        "responder",
+        lambda estado: responder_turno(estado, gerador, revisor_resposta, cliente_mcp),
+    )
     grafo.add_edge(START, "preparar_turno")
     grafo.add_edge("preparar_turno", "coordenar")
     grafo.add_conditional_edges(
@@ -686,6 +701,8 @@ class Supervisor:
         cliente_mcp: ClienteMcp | None = None,
         extrator_triagem: ExtratorTriagem = extrair_triagem_estruturada,
         gerador_resposta: GeradorResposta = gerar_resposta_triagem,
+        validador_pedido_terceiro: ValidadorPedidoTerceiro = validar_pedido_terceiro,
+        revisor_resposta: RevisorResposta = revisar_resposta_beneficiario,
         analisador_documento: AnalisadorDocumento = analisar_documento,
         avaliador_normas: AvaliadorNormas | None = None,
         calculador_normas: CalculadorNormas = calcular_reembolsos_normativos,
@@ -697,6 +714,8 @@ class Supervisor:
         self._cliente_mcp = cliente_mcp or ClienteMcp()
         self._extrator_triagem = extrator_triagem
         self._gerador_resposta = gerador_resposta
+        self._validador_pedido_terceiro = validador_pedido_terceiro
+        self._revisor_resposta = revisor_resposta
         self._analisador_documento = analisador_documento
         self._calculador_normas = calculador_normas
         self._roteador = roteador
@@ -718,6 +737,8 @@ class Supervisor:
             self._cliente_mcp,
             self._extrator_triagem,
             self._gerador_resposta,
+            self._validador_pedido_terceiro,
+            self._revisor_resposta,
             self._analisador_documento,
             self._avaliador_normas,
             self._calculador_normas,
@@ -781,12 +802,14 @@ class Supervisor:
             if protocolo:
                 triagem["protocolo"] = protocolo
             self._grafo.update_state(config, {"triagem": triagem})
-            resposta = self._gerador_resposta(
-                {
-                    "decisao": decisao.value,
-                    "protocolo_aberto": bool(protocolo),
-                    "pendencias": triagem.get("pendencias", []),
-                }
+            resposta = self._revisor_resposta(
+                self._gerador_resposta(
+                    {
+                        "decisao": decisao.value,
+                        "protocolo_aberto": bool(protocolo),
+                        "pendencias": triagem.get("pendencias", []),
+                    }
+                )
             )
         return ChatResponse(
             resposta=resposta,

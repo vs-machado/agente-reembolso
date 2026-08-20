@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage
 
 from app.agents.supervisor.graph import Supervisor
 from app.agents.triagem import ExtracaoTriagemModel
+from app.guardrails import identificar_pedido_terceiro
 from app.main import app
 from app.schemas import ChatRequest, Decisao
 from app.tools import ResultadoMcp
@@ -42,6 +43,14 @@ def gerador_resposta_falso(contexto: dict[str, object]) -> str:
     return f"Resposta gerada para: {', '.join(contexto.get('pendencias', [])) or 'triagem'}"
 
 
+def validar_pedido_terceiro_falso(mensagem: str, candidata: str | None, sessao: str | None) -> bool:
+    return identificar_pedido_terceiro(mensagem, candidata, sessao)
+
+
+def revisar_resposta_falsa(resposta: str) -> str:
+    return resposta
+
+
 class TesteApi(unittest.TestCase):
     def setUp(self) -> None:
         self.patcher = patch(
@@ -50,6 +59,8 @@ class TesteApi(unittest.TestCase):
                 cliente_mcp=ClienteMcpFalso(),
                 extrator_triagem=extrator_falso,
                 gerador_resposta=gerador_resposta_falso,
+                validador_pedido_terceiro=validar_pedido_terceiro_falso,
+                revisor_resposta=revisar_resposta_falsa,
             ),
         )
         self.patcher.start()
@@ -145,6 +156,8 @@ class TesteLockSupervisor(unittest.TestCase):
         supervisor = Supervisor(
             extrator_triagem=extrator_falso,
             gerador_resposta=gerador_resposta_falso,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
         )
         invoke = supervisor._grafo.invoke
         chat_started = threading.Event()
@@ -204,6 +217,8 @@ class TesteTriagemSupervisor(unittest.TestCase):
             cliente_mcp=ClienteMcpFalso(),
             extrator_triagem=extrator,
             gerador_resposta=gerador_resposta_falso,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
         )
         resposta = supervisor.responder(
             ChatRequest(
@@ -221,6 +236,8 @@ class TesteTriagemSupervisor(unittest.TestCase):
             cliente_mcp=cliente,
             extrator_triagem=extrator_falso,
             gerador_resposta=gerador_resposta_falso,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
         )
 
         supervisor.responder(
@@ -242,6 +259,8 @@ class TesteTriagemSupervisor(unittest.TestCase):
             cliente_mcp=cliente,
             extrator_triagem=extrator_falso,
             gerador_resposta=gerador_resposta_falso,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
         )
         supervisor.responder(
             ChatRequest(session_id="protocolo", mensagem="Carteirinha 1234")
