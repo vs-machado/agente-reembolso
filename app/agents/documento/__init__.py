@@ -1,9 +1,17 @@
-"""Documento — categorização e extração.
+"""API publica do agente de documentos."""
 
-Recebe o anexo em base64, extrai o texto (PDF ou OCR na foto), classifica numa
-das 7 categorias e extrai os campos que a análise precisa.
+from app.agents.documento.models import (
+    ClassificacaoDocumentoModel,
+    FatosDocumentaisModel,
+    TextoExtraidoModel,
+)
+from app.agents.documento.services import analisar_documento, classificar_documento, extrair_texto
 
-Três situações parecem iguais e não são: documento fiscal com campo faltando,
-documento fiscal de despesa não coberta e arquivo que não é documento fiscal.
-A base de conhecimento diz o tratamento de cada uma.
-"""
+__all__ = [
+    "ClassificacaoDocumentoModel",
+    "FatosDocumentaisModel",
+    "TextoExtraidoModel",
+    "analisar_documento",
+    "classificar_documento",
+    "extrair_texto",
+]
