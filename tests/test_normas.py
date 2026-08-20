@@ -92,7 +92,7 @@ class TesteNormas(unittest.TestCase):
         consultas = formular_consultas_normativas(
             ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, codigo_tuss="10101012"),
             "plano Pleno e data de adesao 2025-09-01",
-        )
+)
 
         self.assertIsNotNone(consultas)
         self.assertEqual(len(consultas), 4)
@@ -111,6 +111,17 @@ class TesteNormas(unittest.TestCase):
                 return [
                     FonteModel("Regra comum.", "Fonte comum", {}, 0.8, ("bm25",)),
                     FonteModel(f"Regra {len(self.consultas)}.", f"Fonte {len(self.consultas)}", {}, 0.7, ("vetorial",)),
+                ]
+
+            def recuperar_chunks_circulares_vigentes(self, _data_atendimento, **_kwargs):
+                return [
+                    FonteModel(
+                        "Ementa da circular.",
+                        "Circular 02/2026 | pagina 1 | p. 1",
+                        {"tipo": "circular", "status": "vigente", "vigencia_inicio": "2026-04-20"},
+                        0.0,
+                        ("vigencia",),
+                    )
                 ]
 
         class LlmFalso:
@@ -134,7 +145,8 @@ class TesteNormas(unittest.TestCase):
         )
 
         self.assertEqual(len(recuperador.consultas), 4)
-        self.assertEqual(len(avaliacao.fontes_recuperadas), 5)
+        self.assertEqual(len(avaliacao.fontes_recuperadas), 6)
+        self.assertIn("Circular 02/2026", "\n".join(f.citacao for f in avaliacao.fontes_recuperadas))
         self.assertEqual(llm.chamadas, 1)
 
     def test_fusao_limita_fontes_intercaladas(self) -> None:
@@ -144,6 +156,9 @@ class TesteNormas(unittest.TestCase):
                     FonteModel(f"{consulta} {indice}", f"{consulta} {indice}", {}, 0.9, ("bm25",))
                     for indice in range(10)
                 ]
+
+            def recuperar_chunks_circulares_vigentes(self, _data_atendimento, **_kwargs):
+                return []
 
         class LlmFalso:
             def with_structured_output(self, _schema):
@@ -180,6 +195,9 @@ class TesteNormas(unittest.TestCase):
                         origens=("bm25",),
                     ),
                 ]
+
+            def recuperar_chunks_circulares_vigentes(self, _data_atendimento, **_kwargs):
+                return []
 
         class LlmFalso:
             def with_structured_output(self, schema):
@@ -262,6 +280,9 @@ class TesteNormas(unittest.TestCase):
                     FonteModel("Regra afastada.", "Fonte B", {}, 0.8, ("vetorial",)),
                 ]
 
+            def recuperar_chunks_circulares_vigentes(self, _data_atendimento, **_kwargs):
+                return []
+
         class LlmFalso:
             def with_structured_output(self, schema):
                 return self
@@ -297,6 +318,69 @@ class TesteNormas(unittest.TestCase):
             "fundamentacao normativa da alcada",
             avaliacao.avaliacao_alcada.pendencias,
         )
+
+    def test_descarta_classificacao_apoiada_em_fonte_nao_aplicavel(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *args, **kwargs):
+                return [
+                    FonteModel("Regra aplicavel.", "Fonte A", {}, 0.9, ("bm25",)),
+                    FonteModel("Regra afastada.", "Fonte B", {}, 0.8, ("vetorial",)),
+                ]
+
+            def recuperar_chunks_circulares_vigentes(self, _data_atendimento, **_kwargs):
+                return []
+
+        class LlmFalso:
+            def with_structured_output(self, schema):
+                return self
+
+            def invoke(self, prompt: str):
+                return {
+                    "indices_aplicaveis": [1],
+                    "resultado_elegibilidade": True,
+                    "classificacao_decisao": "APROVADO",
+                    "indices_fonte_classificacao": [2],
+                    "justificativa_classificacao": "Apoiada em fonte afastada.",
+                    "justificativa": "Leitura concluida.",
+                }
+
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(
+                categoria=Categoria.CONSULTA_MEDICA,
+                valor_solicitado_brl=Decimal("100"),
+                data_atendimento=date(2026, 4, 30),
+            ),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=LlmFalso(),
+        )
+
+        self.assertIsNone(avaliacao.classificacao_decisao)
+        self.assertEqual(avaliacao.indices_fonte_classificacao, [])
+
+    def test_valida_classificacao_apoiada_em_fonte_aplicavel(self) -> None:
+        fonte = FonteNormativaModel(
+            texto="Regra vigente.",
+            citacao="Regulamento | Art. 12",
+            metadados={"status": "vigente", "vigencia_inicio": "2026-01-01"},
+            score=0.9,
+            origens=("bm25",),
+        )
+
+        avaliacao = AvaliacaoNormativaModel(
+            consulta="consulta",
+            ha_fonte_suficiente=True,
+            vigencia_confirmada=True,
+            fontes_recuperadas=[fonte],
+            fontes_aplicaveis=[fonte],
+            classificacao_decisao="APROVADO",
+            indices_fonte_classificacao=[1],
+            justificativa="Aprovado pela fonte 1.",
+            justificativa_classificacao="Sem reducao de limite anual.",
+        )
+
+        self.assertEqual(avaliacao.classificacao_decisao, "APROVADO")
+        self.assertEqual(avaliacao.indices_fonte_classificacao, [1])
 
 
 if __name__ == "__main__":

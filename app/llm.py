@@ -36,8 +36,8 @@ from pathlib import Path
 MODELO = "gemini-2.5-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-2"
 DIMENSOES = 1536
-TIMEOUT_LLM_SEGUNDOS = 30.0
-TENTATIVAS_LLM = 2
+TIMEOUT_LLM_SEGUNDOS = 60.0
+TENTATIVAS_LLM = 3
 
 RAIZ = Path(__file__).resolve().parents[1]
 

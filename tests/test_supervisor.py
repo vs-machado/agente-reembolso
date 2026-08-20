@@ -279,6 +279,8 @@ class TesteSupervisorMultiagente(unittest.TestCase):
                         justificativa="A fonte autoriza decisao automatizada.",
                         indices_fontes=[1],
                     ),
+                    classificacao_decisao="APROVADO",
+                    indices_fonte_classificacao=[1],
                     justificativa="Aplicavel.",
                 )
             ]
@@ -367,6 +369,8 @@ class TesteSupervisorMultiagente(unittest.TestCase):
                         justificativa="A fonte autoriza decisao automatizada.",
                         indices_fontes=[1],
                     ),
+                    classificacao_decisao="APROVADO",
+                    indices_fonte_classificacao=[1],
                     justificativa="Aplicavel.",
                 )
             ]
@@ -414,6 +418,87 @@ class TesteSupervisorMultiagente(unittest.TestCase):
         self.assertEqual(resposta.valor_solicitado_brl, Decimal("500"))
         self.assertEqual(resposta.valor_reembolso_brl, Decimal("500"))
         self.assertEqual(resposta.decisao, Decisao.APROVADO)
+
+    def test_decisao_deriva_das_normas_aprovado_vs_aprovado_parcial(self) -> None:
+        def analisar(*args, **kwargs) -> FatosDocumentaisModel:
+            return FatosDocumentaisModel(
+                categoria="CONSULTA_MEDICA",
+                natureza_medica=True,
+                aproveitavel=True,
+                justificativa="Recibo valido.",
+                itens=[
+                    ItemDocumentalModel(
+                        categoria="CONSULTA_MEDICA",
+                        valor_solicitado_brl=Decimal("240"),
+                        data_atendimento=date(2026, 5, 10),
+                    )
+                ],
+            )
+
+        def avaliar_parcial(itens, pergunta):
+            fonte = fonte_normativa_falsa()
+            return [
+                AvaliacaoNormativaModel(
+                    consulta="consulta medica",
+                    ha_fonte_suficiente=True,
+                    vigencia_confirmada=True,
+                    fontes_recuperadas=[fonte],
+                    fontes_aplicaveis=[fonte],
+                    resultado_elegibilidade=True,
+                    regras_aplicaveis=["ART-35", "Art. 44", "TUSS 10101012", "Tabela URS 2026"],
+                    parametros_calculo=ParametrosCalculoNormativoModel(
+                        teto_urs=Decimal("40"),
+                        valor_urs_brl=Decimal("6"),
+                        coparticipacao_percentual=Decimal("40"),
+                    ),
+                    avaliacao_alcada=AvaliacaoAlcadaModel(
+                        exige_analista=False,
+                        permite_calculo=True,
+                        justificativa="Alcada ok.",
+                        indices_fontes=[1],
+                    ),
+                    classificacao_decisao="APROVADO_PARCIAL",
+                    indices_fonte_classificacao=[1],
+                    justificativa="Reduzido por limite anual.",
+                )
+            ]
+
+        def calcular(*args, **kwargs):
+            return ResultadoCalculoNormativoModel(valor_reembolso_brl=Decimal("144"))
+
+        supervisor = Supervisor(
+            cliente_mcp=ClienteMcpSupervisorFalso(),
+            extrator_triagem=extrair_triagem_falsa,
+            gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
+            analisador_documento=analisar,
+            avaliador_normas=avaliar_parcial,
+            calculador_normas=calcular,
+            roteador=lambda resumo, acoes: (
+                AcaoSupervisorEnum.NORMAS
+                if AcaoSupervisorEnum.NORMAS in acoes
+                else acoes[0]
+            ),
+        )
+
+        resposta = supervisor.responder(
+            ChatRequest.model_validate(
+                {
+                    "session_id": "parcial",
+                    "mensagem": "Quero reembolso, carteirinha 1234",
+                    "anexo": {
+                        "filename": "consulta.pdf",
+                        "mime_type": "application/pdf",
+                        "base64": "cGRm",
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(resposta.decisao, Decisao.APROVADO_PARCIAL)
+        self.assertEqual(resposta.valor_reembolso_brl, Decimal("144"))
+        self.assertEqual(resposta.regras_aplicadas, ["ART-35", "ART-44", "TUSS-10101012"])
 
 
 if __name__ == "__main__":

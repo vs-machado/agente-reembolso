@@ -19,7 +19,7 @@ from app.llm import criar_embeddings_llamaindex, criar_llm
 LOG = logging.getLogger(__name__)
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_STORAGE = RAIZ / "storage"
-LIMITE_RETRIEVER = 30
+LIMITE_RETRIEVER = 15
 LIMITE_TOKENS_RERANKER = 256
 
 
@@ -194,6 +194,40 @@ class RetrieverHibrido:
         )
         return retriever.retrieve(consulta)
 
+    def recuperar_chunks_circulares_vigentes(self, data_atendimento: date | None = None, limite: int = 3) -> list[FonteModel]:
+        """Seleciona chunks de circulares vigentes por metadados, sem reconstruir documentos.
+
+        Sujeita apenas a vigencia por periodo; a precedencia material entre normas e
+        deixada para a leitura da LLM. Retorna o chunk inicial de cada circular, que
+        contem a ementa e os artigos alterados.
+        """
+        vigentes = [
+            pai
+            for pai in self._pais.values()
+            if pai["metadados"].get("tipo") == "circular"
+            and _vigente(pai["metadados"], data_atendimento)
+        ]
+        por_documento: dict[str, dict] = {}
+        for pai in vigentes:
+            documento_id = pai["metadados"].get("documento_id")
+            atual = por_documento.get(documento_id)
+            pagina = int(pai["metadados"].get("pagina") or 0)
+            if atual is None or pagina < int(atual["metadados"].get("pagina") or 0):
+                por_documento[documento_id] = pai
+        ordenadas = sorted(
+            por_documento.values(),
+            key=lambda pai: pai["metadados"].get("vigencia_inicio") or "0000-00-00",
+            reverse=True,
+        )
+        selecionadas: list[FonteModel] = []
+        for pai in ordenadas[:limite]:
+            meta = {**pai["metadados"], "vigencia_indeterminada": not pai["metadados"].get("vigencia_inicio")}
+            citacao = f"{meta['titulo']} | {meta['caminho_estrutural']} | p. {meta['pagina']}"
+            selecionadas.append(FonteModel(pai["texto"], citacao, meta, 0.0, ("vigencia",), None))
+        if selecionadas and data_atendimento is not None:
+            LOG.info("rag chunks_circulares_vigentes=%s data=%s", [f.citacao for f in selecionadas], data_atendimento.isoformat())
+        return selecionadas
+
     def recuperar(self, consulta: str, data_atendimento: date | None = None, limite: int = 8, validar_relevancia: bool = False) -> list[FonteModel]:
         """Retorna chunks-pai normativos, deduplicados e rastreaveis.
 
@@ -220,7 +254,7 @@ class RetrieverHibrido:
         fundidos = fundir_rrf((("vetorial", vetorial), ("bm25", lexical)))
         # Validação defensiva para artefatos gerados em momentos distintos.
         aplicaveis = [(no, score, origens) for no, score, origens in fundidos if _vigente(no.node.metadata, data_atendimento)]
-        ordenados = self._reranker.ordenar(consulta, aplicaveis)
+        ordenados = self._reranker.ordenar(consulta, aplicaveis[:15])
         selecionados: list[FonteModel] = []
         pais_usados: set[str] = set()
         for no, score, origens in ordenados:

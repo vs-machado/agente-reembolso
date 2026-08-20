@@ -180,8 +180,10 @@ def analisar_conteudo_documental(
         Preencha `dados_documento` com os fatos do documento, independentemente
         dos rotulos ou layout usados: nome do beneficiario e do prestador,
         presenca de CPF do beneficiario e CPF/CNPJ do prestador sem reproduzir
-        esses numeros, registro profissional, data do atendimento, descricao,
-        valor total, moeda, assinatura ou carimbo e numero da sessao no ano.
+        esses numeros, registro profissional (ex: CRM, CRP, CRO), data do atendimento, descricao,
+        valor total, moeda, assinatura ou carimbo (marque true quando houver linha de assinatura,
+        assinatura por extenso, carimbo, assinatura digital, ou identificacao de responsavel tecnico
+        firmando o documento) e numero da sessao no ano.
         Use null ou false quando o fato nao estiver efetivamente presente.
 
         Para relatorio clinico, preencha `evidencia_relatorio` somente com os

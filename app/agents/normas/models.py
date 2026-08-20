@@ -36,6 +36,12 @@ class ParametrosCalculoNormativoModel(BaseModel):
     exige_limite_anual: bool = False
     dispositivos_calculo: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def preencher_limite_anual_se_ausente(self) -> Self:
+        if self.exige_limite_anual and self.limite_anual_brl is None and self.valor_urs_brl is not None:
+            self.limite_anual_brl = Decimal("48") * self.valor_urs_brl
+        return self
+
 
 class AvaliacaoAlcadaModel(BaseModel):
     """Competencia decisoria extraida das fontes, sem regras fixadas no codigo."""
@@ -73,6 +79,9 @@ class LeituraNormativaModel(BaseModel):
     regras_aplicaveis: list[str] = Field(default_factory=list)
     parametros_calculo: ParametrosCalculoNormativoModel | None = None
     avaliacao_alcada: AvaliacaoAlcadaModel | None = None
+    classificacao_decisao: str | None = None
+    indices_fonte_classificacao: list[int] = Field(default_factory=list)
+    justificativa_classificacao: str = ""
     justificativa: str = Field(min_length=1)
 
 
@@ -90,6 +99,9 @@ class AvaliacaoNormativaModel(BaseModel):
     regras_aplicaveis: list[str] = Field(default_factory=list)
     parametros_calculo: ParametrosCalculoNormativoModel | None = None
     avaliacao_alcada: AvaliacaoAlcadaModel | None = None
+    classificacao_decisao: str | None = None
+    indices_fonte_classificacao: list[int] = Field(default_factory=list)
+    justificativa_classificacao: str = ""
     resultado_elegibilidade: bool | None = None
     pendencias: list[str] = Field(default_factory=list)
     justificativa: str = Field(min_length=1)
@@ -108,6 +120,21 @@ class AvaliacaoNormativaModel(BaseModel):
                 raise ValueError("fonte da alcada nao esta entre as fontes aplicaveis")
         return self
 
+    @model_validator(mode="after")
+    def validar_fundamentacao_classificacao(self) -> "AvaliacaoNormativaModel":
+        if self.classificacao_decisao is None:
+            return self
+        if not self.ha_fonte_suficiente or not self.vigencia_confirmada:
+            raise ValueError("conclusao de classificacao da decisao exige fonte suficiente e vigente")
+        if not self.indices_fonte_classificacao:
+            raise ValueError("conclusao de classificacao da decisao exige ao menos uma fonte")
+        for indice in self.indices_fonte_classificacao:
+            if not 1 <= indice <= len(self.fontes_recuperadas):
+                raise ValueError("indice de fonte da classificacao de decisao e invalido")
+            if self.fontes_recuperadas[indice - 1] not in self.fontes_aplicaveis:
+                raise ValueError("fonte da classificacao de decisao nao esta entre as fontes aplicaveis")
+        return self
+
 
 class ResultadoCalculoNormativoModel(BaseModel):
     """Resultado deterministico agregado, pronto para o supervisor apresentar."""
@@ -115,4 +142,5 @@ class ResultadoCalculoNormativoModel(BaseModel):
     valores_itens_brl: list[Decimal] = Field(default_factory=list)
     valor_reembolso_brl: Decimal | None = None
     total_reembolsado_ano_brl: Decimal | None = None
+    limitado_por_saldo_anual: bool = False
     pendencias: list[str] = Field(default_factory=list)

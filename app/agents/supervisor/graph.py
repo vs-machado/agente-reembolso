@@ -9,6 +9,7 @@ from enum import Enum
 import json
 import logging
 import os
+import re
 from threading import RLock
 from time import perf_counter
 from typing import Any
@@ -199,11 +200,21 @@ def _documento_base(estado: EstadoSupervisor) -> FatosDocumentaisModel | None:
         for documento in documentos
         if documento.evidencia_relatorio is not None
     ]
-    pendencias = list(
-        dict.fromkeys(
-            pendencia for documento in documentos for pendencia in documento.pendencias
-        )
+    tem_relatorio_valido = any(
+        doc.categoria == Categoria.RELATORIO_CLINICO and not doc.pendencias
+        for doc in documentos
     )
+    historico_sucesso = estado.get("historico_status") == "sucesso"
+    pendencias: list[str] = []
+    for documento in documentos:
+        for pendencia in documento.pendencias:
+            if historico_sucesso and pendencia == "P19":
+                continue
+            if tem_relatorio_valido and pendencia in ("P21", "P22", "relatorio clinico", "relatorio_clinico"):
+                continue
+            if pendencia not in pendencias:
+                pendencias.append(pendencia)
+
     return base.model_copy(
         update={
             "itens": itens,
@@ -501,6 +512,17 @@ def executar_normas(
             for chave in ("plano", "data_adesao", "status")
             if dados_cadastrais.get(chave) is not None
         }
+        if "data_adesao" in contexto_cadastral and documento and documento.itens:
+            try:
+                data_adesao = date.fromisoformat(str(contexto_cadastral["data_adesao"]))
+                data_atendimento = documento.itens[0].data_atendimento
+                if data_atendimento:
+                    meses = (data_atendimento.year - data_adesao.year) * 12 + (data_atendimento.month - data_adesao.month)
+                    if data_atendimento.day < data_adesao.day:
+                        meses -= 1
+                    contexto_cadastral["tempo_adesao_meses_completos"] = max(0, meses)
+            except Exception:
+                pass
         pergunta_normativa = (
             f"{pergunta}\nContexto cadastral na data do atendimento: "
             f"{contexto_cadastral}"
@@ -603,6 +625,31 @@ def executar_normas(
     return atualizacoes
 
 
+def _normalizar_identificador_normativo(identificador: str) -> str | None:
+    """Padroniza identificadores normativos para o formato canonico."""
+    limpo = identificador.strip()
+    if not limpo:
+        return None
+    match_art = re.match(r"^(?:art(?:\.|igo)?\s*|art-)(\d+)$", limpo, re.IGNORECASE)
+    if match_art:
+        return f"ART-{match_art.group(1)}"
+    match_circ = re.match(r"^(?:circ(?:ular)?(?:\s+normativa)?[\s\-_]*|circ-)(\d+)[\/\-_](\d+)$", limpo, re.IGNORECASE)
+    if match_circ:
+        return f"CIRC-{int(match_circ.group(1)):02d}-{match_circ.group(2)}"
+    match_tuss = re.match(r"^(?:tuss[\s\-_]*)?(\d{8})$", limpo, re.IGNORECASE)
+    if match_tuss:
+        return f"TUSS-{match_tuss.group(1)}"
+    match_nt = re.match(r"^(?:nota\s+tecnica[\s\-_]*|nt-)(\d+)$", limpo, re.IGNORECASE)
+    if match_nt:
+        return f"NT-{int(match_nt.group(1)):02d}"
+    match_anexo = re.match(r"^(?:anexo[\s\-_]*)([a-zivxlcdm]+)$", limpo, re.IGNORECASE)
+    if match_anexo:
+        return f"ANEXO-{match_anexo.group(1).upper()}"
+    if re.match(r"^(?:ART-\d+|CIRC-\d+-\d+|TUSS-\d+|NT-\d+|ANEXO-[A-Z0-9]+)$", limpo, re.IGNORECASE):
+        return limpo.upper()
+    return None
+
+
 def _consolidar(estado: EstadoSupervisor) -> dict[str, Any]:
     triagem = estado.get("triagem", {})
     documento = _documento_base(estado)
@@ -646,20 +693,6 @@ def _consolidar(estado: EstadoSupervisor) -> dict[str, Any]:
             for alcada in alcadas
         )
     )
-    regras = list(
-        dict.fromkeys(
-            regra
-            for avaliacao in avaliacoes
-            for regra in (
-                avaliacao.regras_aplicaveis
-                + (
-                    avaliacao.avaliacao_alcada.regras_aplicaveis
-                    if avaliacao.avaliacao_alcada
-                    else []
-                )
-            )
-        )
-    )
     elegibilidade = triagem.get("elegibilidade", {}).get("estado")
     decisao: Decisao | None = None
     invalido_no_turno = bool(
@@ -684,10 +717,69 @@ def _consolidar(estado: EstadoSupervisor) -> dict[str, Any]:
         and calculo
         and not calculo.pendencias
     ):
-        solicitado = documento.valor_solicitado_total_brl if documento else None
-        reembolso = calculo.valor_reembolso_brl
-        if solicitado is not None and reembolso is not None:
-            decisao = Decisao.APROVADO if reembolso >= solicitado else Decisao.APROVADO_PARCIAL
+        classificacoes = [
+            avaliacao.classificacao_decisao
+            for avaliacao in avaliacoes
+        ]
+        if calculo.limitado_por_saldo_anual or any(c in ("APROVADO_PARCIAL", Decisao.APROVADO_PARCIAL.value) for c in classificacoes):
+            decisao = Decisao.APROVADO_PARCIAL
+        elif all(c in ("APROVADO", Decisao.APROVADO.value) for c in classificacoes):
+            decisao = Decisao.APROVADO
+        elif not avaliacoes or any(c is None for c in classificacoes):
+            decisao = None
+            pendencias.append("classificacao da reducao")
+        else:
+            decisao = None
+            pendencias.append("classificacao da reducao")
+
+    regras_brutas = [
+        regra
+        for avaliacao in avaliacoes
+        for regra in (
+            avaliacao.regras_aplicaveis
+            + (
+                avaliacao.avaliacao_alcada.regras_aplicaveis
+                if avaliacao.avaliacao_alcada
+                else []
+            )
+            + (
+                avaliacao.parametros_calculo.dispositivos_calculo
+                if avaliacao.parametros_calculo
+                else []
+            )
+        )
+    ]
+    texto_fontes = " ".join(
+        fonte.texto
+        for avaliacao in avaliacoes
+        for fonte in (avaliacao.fontes_aplicaveis or avaliacao.fontes_recuperadas)
+    )
+
+    def _regra_existe_na_fonte(regra: str) -> bool:
+        if not texto_fontes:
+            return True
+        if regra.startswith("TUSS-"):
+            codigo = regra.replace("TUSS-", "")
+            return codigo in texto_fontes
+        if regra.startswith("ART-"):
+            num = regra.replace("ART-", "")
+            return re.search(rf"\bArt(?:\.|igo)?\s*{num}\b", texto_fontes, re.IGNORECASE) is not None
+        if regra.startswith("CIRC-"):
+            partes = regra.replace("CIRC-", "").split("-")
+            if len(partes) == 2:
+                c_num, c_ano = partes
+                return re.search(rf"\bCIRCULAR(?:\s+NORMATIVA)?\s*{int(c_num)}/{c_ano}\b", texto_fontes, re.IGNORECASE) is not None
+            return True
+        return True
+
+    regras = list(
+        dict.fromkeys(
+            normalizada
+            for regra in regras_brutas
+            if (normalizada := _normalizar_identificador_normativo(regra)) is not None
+            and _regra_existe_na_fonte(normalizada)
+        )
+    )
     valor_solicitado = documento.valor_solicitado_total_brl if documento else None
     valor_reembolso = None if impede_calculo or decisao == Decisao.ESCALADO_ANALISTA else (
         calculo.valor_reembolso_brl if calculo else None
@@ -748,15 +840,23 @@ def responder_turno(
         AvaliacaoNormativaModel.model_validate(item)
         for item in estado.get("avaliacoes_normativas", [])
     ]
+    documento = _documento_base(estado)
+    procedimentos = [
+        item.descricao_procedimento
+        for item in (documento.itens if documento else [])
+        if item.descricao_procedimento
+    ]
     contexto = {
         **dados,
+        "protocolo": protocolo,
+        "protocolo_aberto": bool(protocolo),
         "pendencias": list(dict.fromkeys(pendencias_conversa)),
         "decisao": dados["decisao"].value if dados["decisao"] else None,
-        "protocolo_aberto": bool(protocolo),
         "tentativa_terceiro": bool(estado.get("pedido_terceiro_atual")),
         "conflito_normativo": bool(triagem.get("conflito_normativo")),
         "mensagem_atual": str(mensagem_atual.content),
         "resposta_anterior": respostas_anteriores[-1] if respostas_anteriores else None,
+        "procedimentos": procedimentos,
         "parametros_calculo": [
             item.parametros_calculo.model_dump(mode="json")
             for item in avaliacoes
