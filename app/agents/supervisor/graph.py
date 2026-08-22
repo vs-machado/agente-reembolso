@@ -82,6 +82,7 @@ class EstadoSupervisor(MessagesState, total=False):
     documentos_revisao: int
     normas_revisao: int
     normas_documentos_revisao: int
+    assinatura_itens_normativos: str
     elegibilidade_documentos_revisao: int
     elegibilidade_normas_revisao: int
     calculo_normas_revisao: int
@@ -232,6 +233,17 @@ def _documento_base(estado: EstadoSupervisor) -> FatosDocumentaisModel | None:
     )
 
 
+def _assinatura_itens_normativos(documento: FatosDocumentaisModel | None) -> str:
+    """Representa somente fatos de despesa que podem alterar a leitura normativa."""
+    if documento is None:
+        return ""
+    return json.dumps(
+        [item.model_dump(mode="json") for item in documento.itens],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
 def _ha_normas_pendentes(estado: EstadoSupervisor) -> bool:
     documento = _documento_base(estado)
     if documento is None or not documento.natureza_medica or not documento.itens:
@@ -240,8 +252,8 @@ def _ha_normas_pendentes(estado: EstadoSupervisor) -> bool:
         return False
     if any(item.data_atendimento is None for item in documento.itens):
         return False
-    avaliacao_desatualizada = estado.get("normas_documentos_revisao", -1) != estado.get(
-        "documentos_revisao", 0
+    avaliacao_desatualizada = estado.get("assinatura_itens_normativos", "") != _assinatura_itens_normativos(
+        documento
     )
     elegibilidade = estado.get("triagem", {}).get("elegibilidade", {})
     avaliacoes = [
@@ -508,7 +520,8 @@ def executar_normas(
         AvaliacaoNormativaModel.model_validate(item)
         for item in estado.get("avaliacoes_normativas", [])
     ]
-    if estado.get("normas_documentos_revisao", -1) != estado.get("documentos_revisao", 0):
+    assinatura_itens = _assinatura_itens_normativos(documento)
+    if estado.get("assinatura_itens_normativos", "") != assinatura_itens:
         pergunta = str(
             next(item for item in reversed(estado["messages"]) if isinstance(item, HumanMessage)).content
         )
@@ -560,6 +573,7 @@ def executar_normas(
         return {
             "avaliacoes_normativas": [item.model_dump(mode="json") for item in avaliacoes],
             "normas_documentos_revisao": estado.get("documentos_revisao", 0),
+            "assinatura_itens_normativos": assinatura_itens,
             "normas_revisao": estado.get("normas_revisao", 0) + 1,
             "calculo_normativo": None,
         }
