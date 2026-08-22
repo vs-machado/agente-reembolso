@@ -270,7 +270,10 @@ def _ha_normas_pendentes(estado: EstadoSupervisor) -> bool:
     )
     calculo_desatualizado = (
         elegibilidade.get("estado") == EstadoElegibilidadeEnum.ELEGIVEL.value
-        and estado.get("calculo_normas_revisao", -1) != estado.get("normas_revisao", 0)
+        and (
+            estado.get("calculo_normativo") is None
+            or estado.get("calculo_normas_revisao", -1) != estado.get("normas_revisao", 0)
+        )
         and not (
             estado.get("historico_status") == "falha"
             and estado.get("historico_tentativa_turno_id") == estado.get("turno_id")
