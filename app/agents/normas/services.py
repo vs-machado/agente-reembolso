@@ -168,7 +168,14 @@ def avaliar_normas_item(
         ha_fonte_suficiente=bool(aplicaveis),
         vigencia_confirmada=bool(aplicaveis),
         ha_conflito_material=leitura.ha_conflito_material,
-        regras_aplicaveis=_regras_tuss_presentes(leitura.regras_aplicaveis, recuperadas),
+        regras_aplicaveis=_regras_tuss_presentes(
+            leitura.regras_aplicaveis
+            + _referencias_da_unidade_de_referencia(
+                leitura.parametros_calculo,
+                aplicaveis,
+            ),
+            recuperadas,
+        ),
         parametros_calculo=leitura.parametros_calculo,
         avaliacao_alcada=avaliacao_alcada,
         classificacao_decisao=classificacao,
@@ -326,6 +333,23 @@ def _regras_tuss_presentes(
         if not regra.upper().startswith("TUSS-")
         or regra.split("-", 1)[1] in textos
     ]
+
+
+def _referencias_da_unidade_de_referencia(
+    parametros: object | None,
+    fontes: list[FonteNormativaModel],
+) -> list[str]:
+    """Vincula regras do cálculo ao trecho que comprova a unidade monetária."""
+    if parametros is None or getattr(parametros, "valor_urs_brl", None) is None:
+        return []
+    referencias: list[str] = []
+    for fonte in fontes:
+        if fonte.metadados.get("tipo") != "tabela":
+            continue
+        if "unidade de referência" not in fonte.texto.casefold():
+            continue
+        referencias.extend(fonte.metadados.get("referencias_normativas", []))
+    return list(dict.fromkeys(referencias))
 
 
 def _validar_avaliacao_alcada(

@@ -53,6 +53,50 @@ class TesteNormas(unittest.TestCase):
         self.assertEqual(avaliacao.fontes_aplicaveis[0].metadados["status"], "vigente")
         self.assertTrue(avaliacao.ha_fonte_suficiente)
 
+    def test_rastreia_regras_da_tabela_usada_no_calculo(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *_args, **_kwargs):
+                return [
+                    FonteModel(
+                        "Valor da Unidade de Referência de Serviços: R$ 10,00.",
+                        "Tabela de referência | p. 1",
+                        {
+                            "tipo": "tabela",
+                            "referencias_normativas": ["ART-33", "ART-47"],
+                        },
+                        0.9,
+                        ("bm25",),
+                    )
+                ]
+
+            def recuperar_chunks_circulares_vigentes(self, *_args, **_kwargs):
+                return []
+
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _prompt: str):
+                return {
+                    "indices_aplicaveis": [1],
+                    "resultado_elegibilidade": True,
+                    "parametros_calculo": {
+                        "teto_urs": "2",
+                        "valor_urs_brl": "10",
+                        "coparticipacao_percentual": "0",
+                    },
+                    "justificativa": "Tabela aplicavel.",
+                }
+
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, data_atendimento=date(2026, 4, 30)),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=LlmFalso(),
+        )
+
+        self.assertEqual(avaliacao.regras_aplicaveis, ["ART-33", "ART-47"])
+
     def test_registra_fonte_afastada_sem_criar_regra(self) -> None:
         fonte = FonteAfastadaModel(
             texto="Regra revogada.",
