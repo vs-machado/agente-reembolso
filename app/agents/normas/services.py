@@ -66,7 +66,7 @@ def formular_consultas_normativas(item: ItemDocumentalModel, pergunta: str) -> l
 
 def _fundir_fontes_recuperadas(
     fontes_por_consulta: list[list[FonteNormativaModel]],
-    limite: int = 12,
+    limite: int = 10,
 ) -> list[FonteNormativaModel]:
     """Intercala rankings focados e conserva uma unica fonte por citacao."""
     fontes: dict[str, FonteNormativaModel] = {}
@@ -268,12 +268,7 @@ def _ler_fontes(
 
         llm = criar_llm(temperature=0)
     candidatos = "\n\n".join(
-        "FONTE "
-        f"{indice}\nCitação: {fonte.citacao}\n"
-        f"Vigência: {fonte.metadados.get('vigencia_inicio', 'indeterminada')}\n"
-        "Referências rastreáveis da indexação: "
-        f"{', '.join(fonte.metadados.get('referencias_normativas', [])) or 'não identificadas'}\n"
-        f"Trecho: {fonte.texto}"
+        f"FONTE {indice}\nCitação: {fonte.citacao}\nVigência: {fonte.metadados.get('vigencia_inicio', 'indeterminada')}\nTrecho: {fonte.texto}"
         for indice, fonte in enumerate(fontes, start=1)
     )
     resultado = llm.with_structured_output(LeituraNormativaModel).invoke(
