@@ -354,7 +354,11 @@ def _referencias_do_calculo_rastreado(
         texto = fonte.texto.casefold()
         if not any(tema in texto for tema in temas):
             continue
-        referencias.extend(fonte.metadados.get("referencias_normativas", []))
+        referencias.extend(
+            referencia
+            for referencia in fonte.metadados.get("referencias_normativas", [])
+            if referencia.startswith(("ART-", "TUSS-"))
+        )
     return list(dict.fromkeys(referencias))
 
 

@@ -61,7 +61,7 @@ class TesteNormas(unittest.TestCase):
                         "Valor da Unidade de Referência de Serviços: R$ 10,00.",
                         "Fonte de cálculo | p. 1",
                         {
-                            "referencias_normativas": ["ART-33", "ART-47"],
+                            "referencias_normativas": ["ANEXO-A", "ART-33", "ART-47"],
                         },
                         0.9,
                         ("bm25",),
