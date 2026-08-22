@@ -53,15 +53,14 @@ class TesteNormas(unittest.TestCase):
         self.assertEqual(avaliacao.fontes_aplicaveis[0].metadados["status"], "vigente")
         self.assertTrue(avaliacao.ha_fonte_suficiente)
 
-    def test_rastreia_regras_da_tabela_usada_no_calculo(self) -> None:
+    def test_rastreia_regras_da_fonte_usada_no_calculo(self) -> None:
         class RecuperadorFalso:
             def recuperar(self, *_args, **_kwargs):
                 return [
                     FonteModel(
                         "Valor da Unidade de Referência de Serviços: R$ 10,00.",
-                        "Tabela de referência | p. 1",
+                        "Fonte de cálculo | p. 1",
                         {
-                            "tipo": "tabela",
                             "referencias_normativas": ["ART-33", "ART-47"],
                         },
                         0.9,

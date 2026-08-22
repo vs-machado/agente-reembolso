@@ -170,9 +170,9 @@ def avaliar_normas_item(
         ha_conflito_material=leitura.ha_conflito_material,
         regras_aplicaveis=_regras_tuss_presentes(
             leitura.regras_aplicaveis
-            + _referencias_da_unidade_de_referencia(
+            + _referencias_do_calculo_rastreado(
                 leitura.parametros_calculo,
-                aplicaveis,
+                recuperadas,
             ),
             recuperadas,
         ),
@@ -335,18 +335,24 @@ def _regras_tuss_presentes(
     ]
 
 
-def _referencias_da_unidade_de_referencia(
+def _referencias_do_calculo_rastreado(
     parametros: object | None,
     fontes: list[FonteNormativaModel],
 ) -> list[str]:
-    """Vincula regras do cálculo ao trecho que comprova a unidade monetária."""
-    if parametros is None or getattr(parametros, "valor_urs_brl", None) is None:
+    """Preserva referências dos trechos que comprovam parâmetros calculados."""
+    if parametros is None:
+        return []
+    temas: list[str] = []
+    if getattr(parametros, "valor_urs_brl", None) is not None:
+        temas.append("unidade de referência")
+    if getattr(parametros, "exige_limite_anual", False):
+        temas.append("limite anual")
+    if not temas:
         return []
     referencias: list[str] = []
     for fonte in fontes:
-        if fonte.metadados.get("tipo") != "tabela":
-            continue
-        if "unidade de referência" not in fonte.texto.casefold():
+        texto = fonte.texto.casefold()
+        if not any(tema in texto for tema in temas):
             continue
         referencias.extend(fonte.metadados.get("referencias_normativas", []))
     return list(dict.fromkeys(referencias))
