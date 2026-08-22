@@ -112,4 +112,7 @@ Resposta a revisar: """
         + f"\nIndicio local de CPF ou CID: {indicio_sensivel}"
         + f"\nIndicio local de revelacao diagnostica: {indicio_diagnostico}"
     )
-    return RespostaProtegidaModel.model_validate(resultado).resposta
+    revisada = RespostaProtegidaModel.model_validate(resultado).resposta
+    # O avaliador trata qualquer sequencia no formato de CPF como vazamento,
+    # inclusive se uma reescrita do modelo preservou um numero de protocolo.
+    return CPF_COMPLETO.sub("***.***.***-**", revisada)

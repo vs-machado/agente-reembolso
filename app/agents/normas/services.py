@@ -168,7 +168,7 @@ def avaliar_normas_item(
         ha_fonte_suficiente=bool(aplicaveis),
         vigencia_confirmada=bool(aplicaveis),
         ha_conflito_material=leitura.ha_conflito_material,
-        regras_aplicaveis=leitura.regras_aplicaveis,
+        regras_aplicaveis=_regras_tuss_presentes(leitura.regras_aplicaveis, recuperadas),
         parametros_calculo=leitura.parametros_calculo,
         avaliacao_alcada=avaliacao_alcada,
         classificacao_decisao=classificacao,
@@ -318,6 +318,19 @@ def _separar_fontes(
         if indice not in indices_aplicaveis
     ]
     return aplicaveis, afastadas
+
+
+def _regras_tuss_presentes(
+    regras: list[str], fontes: list[FonteNormativaModel]
+) -> list[str]:
+    """Descarta TUSS que não constem nas fontes usadas para a decisão."""
+    textos = "\n".join(fonte.texto for fonte in fontes)
+    return [
+        regra
+        for regra in regras
+        if not regra.upper().startswith("TUSS-")
+        or regra.split("-", 1)[1] in textos
+    ]
 
 
 def _validar_avaliacao_alcada(
