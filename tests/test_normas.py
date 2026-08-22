@@ -216,6 +216,35 @@ class TesteNormas(unittest.TestCase):
 
         self.assertIn("REGRA-INDEXADA", llm.prompt)
 
+    def test_prompt_trata_tempo_de_adesao_como_fato_quando_informado(self) -> None:
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, prompt: str):
+                self.prompt = prompt
+                return {"indices_aplicaveis": [1], "justificativa": "Leitura concluida."}
+
+        llm = LlmFalso()
+        from app.agents.normas.services import _ler_fontes
+
+        _ler_fontes(
+            "tempo_adesao_meses_completos: 7",
+            date(2026, 4, 30),
+            [
+                FonteNormativaModel(
+                    texto="Faixas de coparticipacao.",
+                    citacao="Fonte A",
+                    metadados={},
+                    score=0.9,
+                    origens=("bm25",),
+                )
+            ],
+            llm,
+        )
+
+        self.assertIn("como fato de entrada", llm.prompt)
+
     def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
         class RecuperadorFalso:
             def recuperar(self, *args, **kwargs):
