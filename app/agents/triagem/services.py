@@ -73,7 +73,13 @@ Regras Estritas de Seguranca e Sigilo:
 Retorne somente a estrutura solicitada.
 
 Estado da triagem:
-""" + str(contexto)
+""" + str(contexto) + """
+
+Antes de redigir, confira: responda primeiro a pergunta ou informacao da
+mensagem_atual; quando houver anexo, trate seu resultado conhecido no estado;
+quando a mensagem trouxer apenas identificacao, confirme o proximo andamento sem
+repetir digitos; e nunca substitua uma resposta concreta por pedido generico de
+documentos se o estado ja permitir orientar melhor."""
     resultado = modelo.invoke(instrucao)
     resposta = RespostaTriagemModel.model_validate(resultado).resposta
     anterior = contexto.get("resposta_anterior")
