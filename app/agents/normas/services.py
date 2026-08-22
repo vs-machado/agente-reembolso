@@ -279,6 +279,7 @@ def _ler_fontes(
         "prevalece a fonte posterior para fatos ocorridos apos o seu inicio de vigencia (isso nao configura conflito material). "
         "Para extrair coparticipacao_percentual, use `tempo_adesao_meses_completos` da CONSULTA como fato de entrada quando estiver disponivel; somente calcule esse tempo se ele nao vier informado. Compare o numero diretamente com os limites das faixas da fonte vigente e selecione uma unica faixa, respeitando inclusoes e exclusoes declaradas no texto. "
         "Extraia teto_urs e valor_urs_brl conforme a Tabela URS e fontes vigentes. Quando houver limite anual em URS, multiplique pelo valor da URS para preencher limite_anual_brl e marque exige_limite_anual=true. "
+        "Se preencher `parametros_calculo`, marque como aplicaveis todas as fontes que sustentam os componentes usados da formula: teto, unidade de referencia, ordem de apuracao, participacao financeira, arredondamento e, quando existir, limite anual. Em `dispositivos_calculo`, registre somente os identificadores dessas fontes que forem efetivamente usados. "
         "Classifique a decisao em `classificacao_decisao` ('APROVADO' ou 'APROVADO_PARCIAL') e cite em "
         "`indices_fonte_classificacao` os numeros inteiros das fontes vigentes que sustentam essa classificacao: "
         "`APROVADO` quando o pedido atender aos requisitos e nenhuma norma determinar deferimento parcial; "

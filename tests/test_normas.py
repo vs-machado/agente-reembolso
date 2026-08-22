@@ -211,6 +211,35 @@ class TesteNormas(unittest.TestCase):
 
         self.assertIn("como fato de entrada", llm.prompt)
 
+    def test_prompt_exige_rastreabilidade_de_componentes_do_calculo(self) -> None:
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, prompt: str):
+                self.prompt = prompt
+                return {"indices_aplicaveis": [1], "justificativa": "Leitura concluida."}
+
+        llm = LlmFalso()
+        from app.agents.normas.services import _ler_fontes
+
+        _ler_fontes(
+            "consulta normativa",
+            date(2026, 4, 30),
+            [
+                FonteNormativaModel(
+                    texto="Formula de reembolso.",
+                    citacao="Fonte A",
+                    metadados={},
+                    score=0.9,
+                    origens=("bm25",),
+                )
+            ],
+            llm,
+        )
+
+        self.assertIn("componentes usados da formula", llm.prompt)
+
     def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
         class RecuperadorFalso:
             def recuperar(self, *args, **kwargs):
