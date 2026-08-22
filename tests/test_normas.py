@@ -15,12 +15,18 @@ from app.agents.normas import (
     formular_consulta_normativa,
     formular_consultas_normativas,
 )
+from app.agents.normas.models import ParametrosCalculoNormativoModel
 from app.rag import FonteModel
 from app.schemas import Categoria
 from app.agents.triagem import construir_evidencias_normativas
 
 
 class TesteNormas(unittest.TestCase):
+    def test_parametros_aceitam_decimal_no_formato_brasileiro(self) -> None:
+        parametros = ParametrosCalculoNormativoModel(limite_anual_brl="1.141,20")
+
+        self.assertEqual(parametros.limite_anual_brl, Decimal("1141.20"))
+
     def test_preserva_fonte_recuperada_na_avaliacao(self) -> None:
         fonte = FonteNormativaModel(
             texto="O teto da consulta e de 40 URS.",

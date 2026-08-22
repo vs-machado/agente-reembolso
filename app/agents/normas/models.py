@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class FonteNormativaModel(BaseModel):
@@ -35,6 +35,20 @@ class ParametrosCalculoNormativoModel(BaseModel):
     limite_anual_brl: Decimal | None = Field(default=None, ge=0)
     exige_limite_anual: bool = False
     dispositivos_calculo: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "teto_urs",
+        "valor_urs_brl",
+        "coparticipacao_percentual",
+        "limite_anual_brl",
+        mode="before",
+    )
+    @classmethod
+    def aceitar_decimal_em_formato_local(cls, valor: object) -> object:
+        """Aceita a notacao decimal brasileira produzida pela leitura em portugues."""
+        if not isinstance(valor, str) or "," not in valor:
+            return valor
+        return valor.replace(".", "").replace(",", ".")
 
     @model_validator(mode="after")
     def preencher_limite_anual_se_ausente(self) -> Self:
