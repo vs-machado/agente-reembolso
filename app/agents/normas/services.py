@@ -170,11 +170,13 @@ def avaliar_normas_item(
         ha_conflito_material=leitura.ha_conflito_material,
         regras_aplicaveis=_regras_tuss_presentes(
             leitura.regras_aplicaveis
+            + (leitura.parametros_calculo.dispositivos_calculo if leitura.parametros_calculo else [])
             + _referencias_do_calculo_rastreado(
+                item,
                 leitura.parametros_calculo,
-                recuperadas,
+                aplicaveis,
             ),
-            recuperadas,
+            aplicaveis,
         ),
         parametros_calculo=leitura.parametros_calculo,
         avaliacao_alcada=avaliacao_alcada,
@@ -336,29 +338,44 @@ def _regras_tuss_presentes(
 
 
 def _referencias_do_calculo_rastreado(
+    item: ItemDocumentalModel,
     parametros: object | None,
     fontes: list[FonteNormativaModel],
 ) -> list[str]:
-    """Preserva referências dos trechos que comprovam parâmetros calculados."""
+    """Preserva identificadores comprovados por fontes aplicáveis do cálculo."""
     if parametros is None:
         return []
-    temas: list[str] = []
+    temas: list[tuple[str, ...]] = []
     if getattr(parametros, "valor_urs_brl", None) is not None:
-        temas.append("unidade de referência")
+        temas.append(("unidade de refer", "valor da urs"))
+    if getattr(parametros, "teto_urs", None) is not None:
+        temas.append(("teto",))
+    if getattr(parametros, "coparticipacao_percentual", None) is not None:
+        temas.append(("coparticip",))
     if getattr(parametros, "exige_limite_anual", False):
-        temas.append("limite anual")
-    if not temas:
-        return []
+        temas.append(("limite anual",))
     referencias: list[str] = []
     for fonte in fontes:
         texto = fonte.texto.casefold()
-        if not any(tema in texto for tema in temas):
-            continue
-        referencias.extend(
-            referencia
-            for referencia in fonte.metadados.get("referencias_normativas", [])
-            if referencia.startswith(("ART-", "TUSS-"))
+        sustenta_parametro = any(
+            any(termo in texto for termo in grupo)
+            for grupo in temas
         )
+        if sustenta_parametro:
+            referencias.extend(
+                referencia
+                for referencia in fonte.metadados.get("referencias_normativas", [])
+                if referencia.startswith(("ART-", "TUSS-"))
+            )
+            documento_id = fonte.metadados.get("documento_id")
+            if (
+                fonte.metadados.get("tipo") == "circular"
+                and isinstance(documento_id, str)
+                and documento_id.startswith("CIRC-")
+            ):
+                referencias.append(documento_id)
+        if item.codigo_tuss and item.codigo_tuss in fonte.texto:
+            referencias.append(f"TUSS-{item.codigo_tuss}")
     return list(dict.fromkeys(referencias))
 
 

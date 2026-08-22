@@ -96,6 +96,58 @@ class TesteNormas(unittest.TestCase):
 
         self.assertEqual(avaliacao.regras_aplicaveis, ["ART-33", "ART-47"])
 
+    def test_rastreia_circular_e_codigo_do_procedimento_em_fontes_aplicaveis(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *_args, **_kwargs):
+                return [
+                    FonteModel(
+                        "Tabela: codigo 12345678, teto de 2 URS.",
+                        "Tabela URS | p. 1",
+                        {},
+                        0.9,
+                        ("bm25",),
+                    ),
+                    FonteModel(
+                        "Circular vigente fixa a coparticipacao contratual.",
+                        "Circular | p. 1",
+                        {"tipo": "circular", "documento_id": "CIRC-99-2099"},
+                        0.8,
+                        ("vigencia",),
+                    ),
+                ]
+
+            def recuperar_chunks_circulares_vigentes(self, *_args, **_kwargs):
+                return []
+
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, _prompt: str):
+                return {
+                    "indices_aplicaveis": [1, 2],
+                    "resultado_elegibilidade": True,
+                    "parametros_calculo": {
+                        "teto_urs": "2",
+                        "valor_urs_brl": "10",
+                        "coparticipacao_percentual": "20",
+                    },
+                    "justificativa": "Fontes aplicaveis.",
+                }
+
+        avaliacao = avaliar_normas_item(
+            ItemDocumentalModel(
+                categoria=Categoria.CONSULTA_MEDICA,
+                data_atendimento=date(2026, 4, 30),
+                codigo_tuss="12345678",
+            ),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=LlmFalso(),
+        )
+
+        self.assertEqual(avaliacao.regras_aplicaveis, ["TUSS-12345678", "CIRC-99-2099"])
+
     def test_registra_fonte_afastada_sem_criar_regra(self) -> None:
         fonte = FonteAfastadaModel(
             texto="Regra revogada.",
