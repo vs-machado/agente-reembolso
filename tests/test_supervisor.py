@@ -547,6 +547,80 @@ class TesteSupervisorMultiagente(unittest.TestCase):
         self.assertEqual(resposta.valor_reembolso_brl, Decimal("144"))
         self.assertEqual(resposta.regras_aplicadas, ["ART-35", "ART-44", "TUSS-10101012"])
 
+    def test_timeout_em_normas_retorna_resposta_com_pendencia(self) -> None:
+        def analisar(*args, **kwargs) -> FatosDocumentaisModel:
+            return FatosDocumentaisModel(
+                categoria="CONSULTA_MEDICA",
+                natureza_medica=True,
+                aproveitavel=True,
+                justificativa="Recibo valido.",
+                itens=[
+                    ItemDocumentalModel(
+                        categoria="CONSULTA_MEDICA",
+                        valor_solicitado_brl=Decimal("100"),
+                        data_atendimento=date(2026, 5, 10),
+                    )
+                ],
+            )
+
+        def avaliar(*args, **kwargs):
+            raise TimeoutError("gateway indisponivel")
+
+        supervisor = Supervisor(
+            cliente_mcp=ClienteMcpSupervisorFalso(),
+            extrator_triagem=extrair_triagem_falsa,
+            gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
+            analisador_documento=analisar,
+            avaliador_normas=avaliar,
+            roteador=lambda resumo, acoes: (
+                AcaoSupervisorEnum.NORMAS
+                if AcaoSupervisorEnum.NORMAS in acoes
+                else acoes[0]
+            ),
+        )
+
+        resposta = supervisor.responder(
+            ChatRequest.model_validate(
+                {
+                    "session_id": "timeout-normas",
+                    "mensagem": "Quero reembolso, carteirinha 1234",
+                    "anexo": {
+                        "filename": "consulta.pdf",
+                        "mime_type": "application/pdf",
+                        "base64": "cGRm",
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(resposta.resposta, "decisao=None")
+        self.assertIn("analise normativa temporariamente indisponivel", resposta.pendencias)
+
+    def test_falha_antes_da_resposta_gera_contingencia(self) -> None:
+        def extrair_com_falha(mensagem: str) -> ExtracaoTriagemModel:
+            raise TimeoutError("gateway indisponivel")
+
+        supervisor = Supervisor(
+            cliente_mcp=ClienteMcpSupervisorFalso(),
+            extrator_triagem=extrair_com_falha,
+            gerador_resposta=gerar_resposta_falsa,
+            validador_pedido_terceiro=validar_pedido_terceiro_falso,
+            revisor_resposta=revisar_resposta_falsa,
+        )
+
+        resposta = supervisor.responder(
+            ChatRequest(session_id="timeout-triagem", mensagem="Quero reembolso")
+        )
+        repetida = supervisor.responder(
+            ChatRequest(session_id="timeout-triagem", mensagem="Pode verificar agora?")
+        )
+
+        self.assertTrue(resposta.resposta)
+        self.assertEqual(resposta.pendencias, ["indisponibilidade temporaria na analise"])
+        self.assertNotEqual(resposta.resposta, repetida.resposta)
+
 
 if __name__ == "__main__":
     unittest.main()

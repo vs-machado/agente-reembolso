@@ -86,6 +86,7 @@ class EstadoSupervisor(MessagesState, total=False):
     elegibilidade_documentos_revisao: int
     elegibilidade_normas_revisao: int
     calculo_normas_revisao: int
+    normas_falha_turno_id: str
     triagem_turno_id: str
     pedido_terceiro_atual: bool
     passos_turno: int
@@ -245,6 +246,9 @@ def _assinatura_itens_normativos(documento: FatosDocumentaisModel | None) -> str
 
 
 def _ha_normas_pendentes(estado: EstadoSupervisor) -> bool:
+    # Evita repetir a mesma chamada indisponivel ate atingir o limite de passos.
+    if estado.get("normas_falha_turno_id") == estado.get("turno_id"):
+        return False
     documento = _documento_base(estado)
     if documento is None or not documento.natureza_medica or not documento.itens:
         return False
@@ -549,7 +553,17 @@ def executar_normas(
             f"{pergunta}\nContexto cadastral na data do atendimento: "
             f"{contexto_cadastral}"
         )
-        avaliacoes = avaliador(documento.itens, pergunta_normativa)
+        try:
+            avaliacoes = avaliador(documento.itens, pergunta_normativa)
+        except Exception:
+            LOG.exception("normas_indisponivel turno_id=%s", estado.get("turno_id", ""))
+            return {
+                "calculo_normativo": ResultadoCalculoNormativoModel(
+                    pendencias=["analise normativa temporariamente indisponivel"]
+                ).model_dump(mode="json"),
+                "calculo_normas_revisao": estado.get("normas_revisao", 0),
+                "normas_falha_turno_id": estado.get("turno_id", ""),
+            }
         LOG.info(
             "normas_resultado=%s",
             json.dumps(
@@ -579,6 +593,7 @@ def executar_normas(
             "assinatura_itens_normativos": assinatura_itens,
             "normas_revisao": estado.get("normas_revisao", 0) + 1,
             "calculo_normativo": None,
+            "normas_falha_turno_id": "",
         }
 
     exige_historico = _exige_historico(avaliacoes)
@@ -1044,6 +1059,37 @@ class Supervisor:
         finally:
             lock.release()
 
+    def _responder_indisponibilidade(
+        self,
+        config: dict[str, Any],
+        req: ChatRequest,
+    ) -> ChatResponse:
+        """Mantem o atendimento utilizavel quando um no falha antes da resposta."""
+        opcoes = (
+            "Estou com uma indisponibilidade temporaria para concluir esta etapa. "
+            "Seu pedido permanece em acompanhamento; tente novamente em instantes.",
+            "Nao consegui concluir a analise agora por uma instabilidade temporaria. "
+            "O pedido continua em acompanhamento e voce pode retomar em instantes.",
+        )
+        try:
+            estado = self._grafo.get_state(config)
+            anterior = next(
+                (
+                    str(item.content)
+                    for item in reversed(estado.values.get("messages", []))
+                    if isinstance(item, AIMessage)
+                ),
+                "",
+            )
+            resposta = opcoes[1] if anterior == opcoes[0] else opcoes[0]
+            self._grafo.update_state(config, {"messages": [AIMessage(content=resposta)]})
+        except Exception:
+            resposta = opcoes[0]
+        return ChatResponse(
+            resposta=resposta,
+            pendencias=["indisponibilidade temporaria na analise"],
+        )
+
     def responder(self, req: ChatRequest) -> ChatResponse:
         turno_id = uuid4().hex
         metadados = {"anexo_nome": req.anexo.filename} if req.anexo else {}
@@ -1056,7 +1102,11 @@ class Supervisor:
         }
         config = {"configurable": {"thread_id": req.session_id}}
         with self._sessao_bloqueada(req.session_id):
-            estado = self._grafo.invoke(estado_inicial, config=config)
+            try:
+                estado = self._grafo.invoke(estado_inicial, config=config)
+            except Exception:
+                LOG.exception("atendimento_indisponivel session_id=%s", req.session_id)
+                return self._responder_indisponibilidade(config, req)
         resposta = ChatResponse.model_validate(estado["resposta_chat"])
         if os.getenv("AGENTE_LOG_CHAT_COMPLETO", "").lower() in {"1", "true", "sim"}:
             LOG.info(
