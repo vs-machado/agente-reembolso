@@ -180,7 +180,41 @@ class TesteNormas(unittest.TestCase):
             llm=LlmFalso(),
         )
 
-        self.assertEqual(len(avaliacao.fontes_recuperadas), 10)
+        self.assertEqual(len(avaliacao.fontes_recuperadas), 12)
+
+    def test_prompt_expoe_referencias_rastreaveis_da_fonte(self) -> None:
+        class RecuperadorFalso:
+            def recuperar(self, *_args, **_kwargs):
+                return [
+                    FonteModel(
+                        "Regra rastreada.",
+                        "Fonte rastreada",
+                        {"referencias_normativas": ["REGRA-INDEXADA"]},
+                        0.9,
+                        ("bm25",),
+                    )
+                ]
+
+            def recuperar_chunks_circulares_vigentes(self, *_args, **_kwargs):
+                return []
+
+        class LlmFalso:
+            def with_structured_output(self, _schema):
+                return self
+
+            def invoke(self, prompt: str):
+                self.prompt = prompt
+                return {"indices_aplicaveis": [1], "justificativa": "Leitura concluida."}
+
+        llm = LlmFalso()
+        avaliar_normas_item(
+            ItemDocumentalModel(categoria=Categoria.CONSULTA_MEDICA, data_atendimento=date(2026, 4, 30)),
+            "Tenho direito?",
+            recuperador=RecuperadorFalso(),
+            llm=llm,
+        )
+
+        self.assertIn("REGRA-INDEXADA", llm.prompt)
 
     def test_conflito_preserva_fontes_e_registra_motivo(self) -> None:
         class RecuperadorFalso:

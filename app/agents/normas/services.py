@@ -66,7 +66,7 @@ def formular_consultas_normativas(item: ItemDocumentalModel, pergunta: str) -> l
 
 def _fundir_fontes_recuperadas(
     fontes_por_consulta: list[list[FonteNormativaModel]],
-    limite: int = 10,
+    limite: int = 12,
 ) -> list[FonteNormativaModel]:
     """Intercala rankings focados e conserva uma unica fonte por citacao."""
     fontes: dict[str, FonteNormativaModel] = {}
@@ -268,7 +268,12 @@ def _ler_fontes(
 
         llm = criar_llm(temperature=0)
     candidatos = "\n\n".join(
-        f"FONTE {indice}\nCitação: {fonte.citacao}\nVigência: {fonte.metadados.get('vigencia_inicio', 'indeterminada')}\nTrecho: {fonte.texto}"
+        "FONTE "
+        f"{indice}\nCitação: {fonte.citacao}\n"
+        f"Vigência: {fonte.metadados.get('vigencia_inicio', 'indeterminada')}\n"
+        "Referências rastreáveis da indexação: "
+        f"{', '.join(fonte.metadados.get('referencias_normativas', [])) or 'não identificadas'}\n"
+        f"Trecho: {fonte.texto}"
         for indice, fonte in enumerate(fontes, start=1)
     )
     resultado = llm.with_structured_output(LeituraNormativaModel).invoke(
@@ -284,19 +289,13 @@ def _ler_fontes(
         "`APROVADO` quando o pedido atender aos requisitos e nenhuma norma determinar deferimento parcial; "
         "`APROVADO_PARCIAL` somente quando norma expressa previr deferimento parcial (como quando o valor for limitado pelo saldo anual). Reducoes previstas em norma "
         "(como coparticipacao contratual ou teto do procedimento) nao tornam o deferimento parcial. "
-        "Em `regras_aplicaveis`, liste exclusivamente os identificadores normativos normalizados (no formato "
-        "`ART-{numero}`, `TUSS-{codigo}`, `CIRC-{numero}-{ano}`, `ANEXO-{numero/letra}`, `NT-{numero}`) de todos os "
-        "dispositivos e regras das fontes vigentes que compõem a fundamentação normativa integral da decisão. "
-        "Cadeia normativa obrigatória a incluir em `regras_aplicaveis` a partir das fontes fornecidas: "
-        "1) O código TUSS do procedimento presente na Tabela URS e o artigo do Regulamento ou Circular que fixa sua cobertura e teto (ex: ART-35 para consultas, ART-41 e CIRC-02-2026 para terapias); "
-        "2) Todos os artigos do Regulamento Geral que fundamentam o cálculo do reembolso: fórmula de conversão de teto URS em reais (ART-33), regra e ordem de apuração (ART-43), coparticipação por plano e tempo de adesão (ART-44), limite anual quando aplicável (ART-45) e regra de arredondamento (ART-47); "
-        "3) Normas documentais e exigências de relatório clínico para terapias (ART-73), quando aplicável; "
-        "4) Normas de competência decisória e alçada (ART-78), quando aplicável. "
-        "ATENÇÃO CRÍTICA: Em `regras_aplicaveis`, inclua SOMENTE dispositivos, artigos, circulares e códigos TUSS que constem explicitamente no texto das fontes vigentes fornecidas em CANDIDATOS. NUNCA inclua códigos TUSS do documento do usuário que não existam nas fontes normativas. "
+        "Em `regras_aplicaveis`, liste os identificadores normativos efetivamente usados para cobertura, cálculo, exigências documentais e competência decisória. "
+        "Cada identificador deve constar nas referências rastreáveis ou no texto de uma fonte vigente marcada como aplicável; não complete lacunas com conhecimento externo. "
+        "Inclua o identificador do procedimento somente quando ele estiver comprovado pela fonte normativa aplicável. "
         "Não inclua 'FONTE-X', nomes por extenso nem texto livre. "
         "Em `avaliacao_alcada`, avalie se a analise automatizada pode decidir com base estrita nas regras de competencia "
         "das fontes fornecidas, citando em `indices_fontes` os numeros inteiros das fontes correspondentes. Identifique `item_sob_analise` somente quando "
-        "previsto expressamente nas fontes. Quando o pedido for de material, órtese, prótese ou OPME, ou exceder o limite de alçada, marque exige_analista=true e permite_calculo=false com base no ART-78. Quando nao houver fonte suficiente, deixe `exige_analista` e `permite_calculo` nulos. "
+        "previsto expressamente nas fontes. Quando a fonte de competência vedar decisão automatizada para a natureza ou valor do pedido, marque exige_analista=true e permite_calculo=false. Quando nao houver fonte suficiente, deixe `exige_analista` e `permite_calculo` nulos. "
         "Quando fontes materiais vigentes conflitarem, marque ha_conflito_material=true e resultado_elegibilidade=null.\n\n"
         f"DATA-FATO: {data_fato.isoformat()}\nCONSULTA: {consulta}\n\n{candidatos}"
     )
