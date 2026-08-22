@@ -8,7 +8,7 @@ services:
     # o servidor vem no pacote, em mcp/ — nada para baixar
     build: ./mcp
     ports:
-      - "${MCP_PORT:-19000}:9000"
+      - "9000:9000"
     environment:
       MCP_OPERADORA_TOKEN: treino
       MCP_OPERADORA_DADOS: /dados
@@ -21,9 +21,9 @@ services:
     depends_on:
       - mcp
     ports:
-      - "${AGENTE_PORT:-18000}:8000"
+      - "8000:8000"
+    env_file:
+      - .env
     environment:
       # dentro da rede do compose o MCP atende pelo nome do serviço
       MCP_OPERADORA_URL: http://mcp:9000/mcp
-      BOOTCAMP_LLM_ENDPOINT: ${BOOTCAMP_LLM_ENDPOINT}
-      BOOTCAMP_API_KEY: ${BOOTCAMP_API_KEY}
