@@ -10,6 +10,7 @@ from app.agents.documento import (
     AnaliseConteudoDocumentalModel,
     ClassificacaoDocumentoModel,
     DadosDocumentoModel,
+    EvidenciaPedidoMedicoModel,
     EvidenciaRelatorioClinicoModel,
     FatosDocumentaisModel,
     ItemDocumentalModel,
@@ -214,6 +215,37 @@ class TesteDocumento(unittest.TestCase):
         self.assertEqual(resultado.evidencia_relatorio.numero_sessoes_ano, 12)
         self.assertTrue(resultado.evidencia_relatorio.manutencao_tratamento)
         self.assertIsNone(resultado.valor_solicitado_total_brl)
+
+    def test_pedido_medico_valido_e_evidencia_sem_pendencias_fiscais(self) -> None:
+        def analisador(_texto: str) -> AnaliseConteudoDocumentalModel:
+            return AnaliseConteudoDocumentalModel(
+                classificacao=ClassificacaoDocumentoModel(
+                    categoria=Categoria.RELATORIO_CLINICO,
+                    natureza_medica=True,
+                    justificativa="Pedido medico.",
+                ),
+                dados_documento=DadosDocumentoModel(),
+                evidencia_pedido_medico=EvidenciaPedidoMedicoModel(
+                    identificacao_beneficiario="Paulo Henrique Nogueira",
+                    identificacao_profissional="Dra. Renata Souza",
+                    registro_conselho="CRM SP 123456",
+                    data_emissao=date(2026, 5, 18),
+                    procedimento_solicitado="Tomografia computadorizada de cranio",
+                ),
+            )
+
+        resultado = analisar_documento(
+            criar_anexo("pedido_medico_tomografia.pdf"),
+            nome_titular="Paulo Henrique Nogueira",
+            ha_pedido_pendente=True,
+            analisador=analisador,
+        )
+
+        self.assertEqual(resultado.categoria, Categoria.RELATORIO_CLINICO)
+        self.assertEqual(resultado.itens, [])
+        self.assertEqual(resultado.pendencias, [])
+        self.assertIsNotNone(resultado.evidencia_pedido_medico)
+        self.assertFalse(resultado.relatorio_complementar)
 
     def test_preserva_categorias_dos_itens_e_calcula_dominante_por_soma(self) -> None:
         resultado = FatosDocumentaisModel(

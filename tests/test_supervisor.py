@@ -5,7 +5,12 @@ from decimal import Decimal
 import re
 import unittest
 
-from app.agents.documento import FatosDocumentaisModel, ItemDocumentalModel
+from app.agents.documento import (
+    EvidenciaPedidoMedicoModel,
+    FatosDocumentaisModel,
+    ItemDocumentalModel,
+)
+from app.agents.supervisor.graph import _documento_base
 from app.agents.normas import (
     AvaliacaoAlcadaModel,
     AvaliacaoNormativaModel,
@@ -72,6 +77,48 @@ def fonte_normativa_falsa() -> FonteNormativaModel:
 
 
 class TesteSupervisorMultiagente(unittest.TestCase):
+    def test_pedido_medico_valido_resolve_pendencia_de_indicacao(self) -> None:
+        nota = FatosDocumentaisModel(
+            categoria="EXAME_DIAGNOSTICO",
+            natureza_medica=True,
+            aproveitavel=False,
+            justificativa="Nota fiscal sem indicacao clinica.",
+            itens=[
+                ItemDocumentalModel(
+                    categoria="EXAME_DIAGNOSTICO",
+                    valor_solicitado_brl=Decimal("980"),
+                    data_atendimento=date(2026, 5, 20),
+                )
+            ],
+            pendencias=["P21"],
+        )
+        pedido = FatosDocumentaisModel(
+            categoria="RELATORIO_CLINICO",
+            natureza_medica=True,
+            aproveitavel=True,
+            justificativa="Pedido medico valido.",
+            evidencia_pedido_medico=EvidenciaPedidoMedicoModel(
+                identificacao_beneficiario="Paulo Henrique Nogueira",
+                identificacao_profissional="Dra. Renata Souza",
+                registro_conselho="CRM SP 123456",
+                data_emissao=date(2026, 5, 18),
+                procedimento_solicitado="Tomografia computadorizada de cranio",
+            ),
+        )
+
+        consolidado = _documento_base(
+            {
+                "documentos_validos": [
+                    {"fatos": nota.model_dump(mode="json")},
+                    {"fatos": pedido.model_dump(mode="json")},
+                ]
+            }
+        )
+
+        self.assertIsNotNone(consolidado)
+        self.assertEqual(consolidado.pendencias, [])
+        self.assertTrue(consolidado.aproveitavel)
+
     def test_normas_define_alcada_sem_regra_rigida_no_supervisor(self) -> None:
         cliente = ClienteMcpSupervisorFalso()
         rotas_com_opcao: list[list[AcaoSupervisorEnum]] = []

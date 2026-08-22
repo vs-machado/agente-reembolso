@@ -62,6 +62,17 @@ class EvidenciaRelatorioClinicoModel(BaseModel):
     assinatura_presente: bool | None = None
 
 
+class EvidenciaPedidoMedicoModel(BaseModel):
+    """Fatos de uma solicitacao medica, sem transforma-la em despesa."""
+
+    identificacao_beneficiario: str | None = None
+    identificacao_profissional: str | None = None
+    registro_conselho: str | None = None
+    data_emissao: date | None = None
+    procedimento_solicitado: str | None = None
+    assinatura_presente: bool | None = None
+
+
 class DadosDocumentoModel(BaseModel):
     """Fatos do documento para validar pendencias sem depender de seu layout."""
 
@@ -87,6 +98,7 @@ class AnaliseConteudoDocumentalModel(BaseModel):
     itens: list[ItemDocumentalModel] = Field(default_factory=list)
     # A evidencia fica separada porque complementa a analise sem constituir despesa.
     evidencia_relatorio: EvidenciaRelatorioClinicoModel | None = None
+    evidencia_pedido_medico: EvidenciaPedidoMedicoModel | None = None
 
 
 class FatosDocumentaisModel(BaseModel):
@@ -100,6 +112,7 @@ class FatosDocumentaisModel(BaseModel):
     # Assim o calculo consome apenas despesas sem perder a evidencia clinica complementar.
     itens: list[ItemDocumentalModel] = Field(default_factory=list)
     evidencia_relatorio: EvidenciaRelatorioClinicoModel | None = None
+    evidencia_pedido_medico: EvidenciaPedidoMedicoModel | None = None
     pendencias: list[str] = Field(default_factory=list)
     relatorio_complementar: bool = False
 

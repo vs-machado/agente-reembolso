@@ -15,6 +15,7 @@ from app.agents.documento.models import (
     AnaliseConteudoDocumentalModel,
     ClassificacaoDocumentoModel,
     DadosDocumentoModel,
+    EvidenciaPedidoMedicoModel,
     EvidenciaRelatorioClinicoModel,
     FatosDocumentaisModel,
     ItemDocumentalModel,
@@ -147,6 +148,27 @@ def _pendencias_relatorio(
     return pendencias
 
 
+def _pendencias_pedido_medico(
+    evidencia: EvidenciaPedidoMedicoModel | None,
+    titular: str | None,
+) -> list[str]:
+    """Valida a prescricao pelos fatos exigidos, sem aplicar requisitos fiscais."""
+    pendencias: list[str] = []
+    if not evidencia or not evidencia.identificacao_beneficiario:
+        pendencias.append("P01")
+    elif titular and _normalizar_nome(evidencia.identificacao_beneficiario) != _normalizar_nome(titular):
+        pendencias.append("P03")
+    if not evidencia or not evidencia.identificacao_profissional:
+        pendencias.append("P04")
+    if not evidencia or not evidencia.registro_conselho:
+        pendencias.append("P06")
+    if not evidencia or not evidencia.data_emissao:
+        pendencias.append("P09")
+    if not evidencia or not evidencia.procedimento_solicitado:
+        pendencias.append("P13")
+    return pendencias
+
+
 def analisar_conteudo_documental(
     texto: str,
     llm: object | None = None,
@@ -174,8 +196,8 @@ def analisar_conteudo_documental(
         indicacoes clinicas. Para cada valor, preserve `valor_original` e o
         `codigo_moeda_iso`. Preencha `valor_solicitado_brl` somente quando a
         moeda indicada no documento for BRL; nunca converta moeda por estimativa.
-        Retorne `itens` vazio para documento invalido, relatorio clinico ou valor
-        global sem discriminacao.
+        Retorne `itens` vazio para documento invalido, relatorio clinico, pedido
+        medico ou valor global sem discriminacao.
 
         Preencha `dados_documento` com os fatos do documento, independentemente
         dos rotulos ou layout usados: nome do beneficiario e do prestador,
@@ -191,7 +213,16 @@ def analisar_conteudo_documental(
         data de emissao, periodo de acompanhamento, numero de sessoes no ano,
         indicacao de manutencao e assinatura. Esses fatos sao evidencia
         complementar e nao item de despesa. Para as demais categorias, retorne
-        `evidencia_relatorio=null`. A cobertura sera avaliada por outro agente.
+        `evidencia_relatorio=null`.
+
+        Pedido medico, solicitacao medica ou prescricao que indique um exame ou
+        procedimento tambem e evidencia clinica, nao documento fiscal. Classifique-o
+        como `RELATORIO_CLINICO`, deixe `itens` vazio e preencha
+        `evidencia_pedido_medico` com paciente, profissional solicitante, registro
+        de conselho, data e procedimento solicitado. Nao exija valor, CPF/CNPJ,
+        assinatura ou carimbo quando esses fatos nao constarem no pedido. Para outros
+        documentos, retorne `evidencia_pedido_medico=null`. A cobertura sera avaliada
+        por outro agente.
         Retorne somente a estrutura solicitada.
 
         Documento:
@@ -229,7 +260,12 @@ def analisar_documento(
             aproveitavel=False,
             justificativa=classificacao.justificativa,
         )
-    if categoria == Categoria.RELATORIO_CLINICO:
+    if analise.evidencia_pedido_medico is not None:
+        # O contrato externo nao possui categoria propria para prescricao; internamente
+        # ela e uma evidencia clinica e nunca uma despesa.
+        categoria = Categoria.RELATORIO_CLINICO
+        pendencias = _pendencias_pedido_medico(analise.evidencia_pedido_medico, nome_titular)
+    elif categoria == Categoria.RELATORIO_CLINICO:
         # Relatorios complementares seguem os requisitos proprios da NT-02.
         pendencias = _pendencias_relatorio(
             analise.dados_documento,
@@ -251,6 +287,11 @@ def analisar_documento(
         evidencia_relatorio=analise.evidencia_relatorio
         if categoria == Categoria.RELATORIO_CLINICO
         else None,
+        evidencia_pedido_medico=analise.evidencia_pedido_medico,
         pendencias=pendencias,
-        relatorio_complementar=categoria == Categoria.RELATORIO_CLINICO and ha_pedido_pendente,
+        relatorio_complementar=(
+            categoria == Categoria.RELATORIO_CLINICO
+            and analise.evidencia_pedido_medico is None
+            and ha_pedido_pendente
+        ),
     )

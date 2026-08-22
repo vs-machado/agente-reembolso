@@ -204,6 +204,10 @@ def _documento_base(estado: EstadoSupervisor) -> FatosDocumentaisModel | None:
         doc.categoria == Categoria.RELATORIO_CLINICO and not doc.pendencias
         for doc in documentos
     )
+    tem_pedido_medico_valido = any(
+        doc.evidencia_pedido_medico is not None and not doc.pendencias
+        for doc in documentos
+    )
     historico_sucesso = estado.get("historico_status") == "sucesso"
     pendencias: list[str] = []
     for documento in documentos:
@@ -211,6 +215,8 @@ def _documento_base(estado: EstadoSupervisor) -> FatosDocumentaisModel | None:
             if historico_sucesso and pendencia == "P19":
                 continue
             if tem_relatorio_valido and pendencia in ("P21", "P22", "relatorio clinico", "relatorio_clinico"):
+                continue
+            if tem_pedido_medico_valido and pendencia in ("P21", "pedido medico", "pedido_medico"):
                 continue
             if pendencia not in pendencias:
                 pendencias.append(pendencia)
