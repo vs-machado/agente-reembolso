@@ -180,7 +180,7 @@ class TesteNormas(unittest.TestCase):
             llm=LlmFalso(),
         )
 
-        self.assertEqual(len(avaliacao.fontes_recuperadas), 10)
+        self.assertEqual(len(avaliacao.fontes_recuperadas), 12)
 
     def test_prompt_trata_tempo_de_adesao_como_fato_quando_informado(self) -> None:
         class LlmFalso:
