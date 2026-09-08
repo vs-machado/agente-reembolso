@@ -1,16 +1,13 @@
-"""Cliente do endpoint de LLM da banca — Gemini, pela porta nativa.
+"""Cliente da API oficial do Gemini para a avaliação local.
 
-Usa as mesmas duas variáveis que você configura no `.env`, e o mesmo modelo que
+Usa a mesma chave que você configura no `.env`, e o mesmo modelo que
 responde ao seu agente. `temperature=0`: a nota tem de ser a mesma se a correção
 for repetida.
 
-    BOOTCAMP_LLM_ENDPOINT=https://...        (sem /v1beta no fim)
-    BOOTCAMP_API_KEY=bc26_...
+    BOOTCAMP_API_KEY=...
 
 Fala direto com `POST /v1beta/models/{modelo}:generateContent`, que é o formato
-do Gemini. Se você preferir montar o seu agente com outra biblioteca, tudo bem —
-o endpoint também aceita o formato da OpenAI, no `/v1`. As duas portas consomem
-o mesmo crédito.
+do Gemini.
 """
 
 from __future__ import annotations
@@ -23,6 +20,7 @@ import httpx
 
 TIMEOUT = 120.0
 TENTATIVAS = 3
+ENDPOINT_GEMINI = "https://generativelanguage.googleapis.com"
 
 
 class LLMIndisponivel(RuntimeError):
@@ -30,18 +28,11 @@ class LLMIndisponivel(RuntimeError):
 
 
 def _config() -> tuple[str, str, str]:
-    endpoint = os.getenv("BOOTCAMP_LLM_ENDPOINT", "").rstrip("/")
     chave = os.getenv("BOOTCAMP_API_KEY", "")
-    # O gateway impõe o modelo da prova; este campo existe para o log e para
-    # quem corrigir apontando para outro endpoint.
     modelo = os.getenv("BOOTCAMP_JUIZ_MODELO", "gemini-2.5-flash-lite")
-    if not endpoint or not chave:
-        raise LLMIndisponivel(
-            "defina BOOTCAMP_LLM_ENDPOINT e BOOTCAMP_API_KEY para usar o juiz")
-    # Aceita endpoint com ou sem /v1 no fim: o candidato pode ter copiado de um
-    # exemplo do formato OpenAI, e não é por isso que a correção vai falhar.
-    endpoint = re.sub(r"/v1(beta)?$", "", endpoint)
-    return endpoint, chave, modelo
+    if not chave:
+        raise LLMIndisponivel("defina BOOTCAMP_API_KEY para usar o juiz")
+    return ENDPOINT_GEMINI, chave, modelo
 
 
 def _extrair_json(texto: str) -> dict:
@@ -91,4 +82,4 @@ def perguntar_json(sistema: str, usuario: str) -> dict:
 
 
 def disponivel() -> bool:
-    return bool(os.getenv("BOOTCAMP_LLM_ENDPOINT") and os.getenv("BOOTCAMP_API_KEY"))
+    return bool(os.getenv("BOOTCAMP_API_KEY"))

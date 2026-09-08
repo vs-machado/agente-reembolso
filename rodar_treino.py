@@ -9,7 +9,7 @@ Não é uma versão simplificada da avaliação: é o mesmo motor, em `avaliacao
 com os mesmos critérios, o mesmo beneficiário simulado e o mesmo juiz. O que
 muda são as conversas — as da avaliação oficial são outras.
 
-Por isso ele precisa de `BOOTCAMP_LLM_ENDPOINT` e `BOOTCAMP_API_KEY` no `.env`:
+Por isso ele precisa de `BOOTCAMP_API_KEY` no `.env`:
 o beneficiário do outro lado é um modelo, e quem decide se cada turno foi
 atendido também.
 
@@ -65,7 +65,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not disponivel():
-        print(f"{VERMELHO}faltam BOOTCAMP_LLM_ENDPOINT e BOOTCAMP_API_KEY{FIM}")
+        print(f"{VERMELHO}falta BOOTCAMP_API_KEY{FIM}")
         print("Este teste conversa com o seu agente e julga cada turno — as duas")
         print("pontas usam modelo. Preencha o .env e rode de novo.")
         return 2

@@ -5,19 +5,17 @@ codificar — ele define o que é avaliado, e há regra sobre como usar IA nele.
 
 Isto aqui é só para você começar a rodar em cinco minutos.
 
-## 1. A chave já está aqui
+## 1. Configure a sua chave
 
-**Não há nada para configurar.** O `.env` deste pacote já vem com o endpoint e a
-chave preenchidos. Nenhuma chave de nuvem, nenhum provedor, nenhuma região —
-abra e use.
+Crie uma chave pessoal da API do Gemini no Google AI Studio e informe-a no
+`.env`:
 
-A chave é **compartilhada pela turma**, com um crédito comum de 100 milhões de
-tokens de entrada e 100 milhões de saída. O que você gasta sai do bolo de todo
-mundo, e não há recarga.
+```env
+BOOTCAMP_API_KEY=sua_chave
+```
 
 O arquivo está no `.gitignore`, então `git add -A` não o leva para o seu
-repositório. **Não publique a chave**: exposta, ela é revogada — e aí ninguém
-da turma trabalha até sair outra.
+repositório. **Não publique a chave.**
 
 ## 2. Confira que está de pé
 
@@ -33,16 +31,13 @@ Saída esperada:
 ```
 chat      : pronto.
 embeddings: 1536 dimensões
-saldo     : {'candidato': '...', 'entrada': {...}, 'saida': {...}}
 ```
 
 ## 3. O modelo
 
-**Gemini 2.5 Flash Lite**, servido por um gateway da banca. Você não escolhe
-modelo — é o mesmo para todos os candidatos.
+**Gemini 2.5 Flash Lite**, servido pela API oficial do Google.
 
-`app/llm.py` já traz tudo montado. Use e siga; ninguém é avaliado por acertar
-`base_url`.
+`app/llm.py` já traz os clientes configurados para a API oficial.
 
 ```python
 from app.llm import criar_llm, criar_embeddings
@@ -100,24 +95,14 @@ quebra sozinho entre o seu teste e a correção — e aí quem perde é você.
 > lembrar que o item 4 pede supervisor com handoff explícito — um ReAct pronto
 > resolve o "chamar ferramenta", não a arquitetura que a prova cobra.
 
-## 5. O crédito é da turma
+## 5. Uso da API
 
-**100 milhões de tokens de entrada e 100 milhões de saída, compartilhados.**
-Não há recarga.
+As chamadas consomem a cota da chave pessoal configurada. Duas boas práticas:
 
-```bash
-.venv/bin/python -c "from app.llm import saldo; print(saldo())"
-```
-
-Esgotou, as chamadas passam a devolver `429` — para todo mundo. Duas
-consequências práticas:
-
-- **Teto de 50 mil tokens de entrada por chamada.** Acima disso vem `413`. Um
-  agente que recupera os trechos certos manda alguns milhares por turno e nunca
-  encosta nesse limite; quem tenta enviar a base inteira no prompt bate nele no
-  primeiro turno. A base tem ~89 mil tokens.
-- **Não deixe laço rodando.** Um `while True` esquecido de madrugada é crédito
-  que faltou para o colega no dia seguinte.
+- **Recupere somente os trechos relevantes.** Reenviar a base inteira aumenta
+  a latência e o consumo de tokens. A base tem cerca de 89 mil tokens.
+- **Não deixe laço rodando.** Um `while True` esquecido pode consumir a sua
+  cota rapidamente.
 
 ## 6. Suba o servidor MCP
 
@@ -171,12 +156,11 @@ Não é uma bateria de asserções sobre uma resposta pronta. Por turno:
 5. sem modelo nenhum: porta de entrada (resposta repetida) e violações de CPF,
    CID e dado de terceiro.
 
-**As duas pontas usam o mesmo endpoint e a mesma chave do seu `.env`** — o
-mesmo proxy e o mesmo modelo que respondem ao seu agente. É o mesmo código da
-correção, em `avaliacao/`; abra e leia, não existe rubrica oculta.
+**As duas pontas usam a mesma chave do seu `.env` e a API oficial do Gemini** —
+o mesmo modelo responde ao seu agente. O código está em `avaliacao/`.
 
-Uma rodada completa custa uns 13 mil tokens de entrada, fora o que o seu agente
-gasta. Pouco — mas o bolo é dividido, então não deixe em laço.
+Uma rodada completa custa cerca de 13 mil tokens de entrada, fora o que o seu
+agente gasta; não deixe a avaliação rodando em laço.
 
 A nota de cada conversa vem **70% dos turnos atendidos e o restante do
 desfecho correto**; a nota final é a média das conversas. Estas três **não valem nota** — as da
