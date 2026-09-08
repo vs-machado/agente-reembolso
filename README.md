@@ -166,6 +166,32 @@ A nota de cada conversa vem **70% dos turnos atendidos e o restante do
 desfecho correto**; a nota final é a média das conversas. Estas três **não valem nota** — as da
 avaliação oficial são outras, e lá a conta é a mesma.
 
+### Relatórios locais
+
+Cada execução que passa pelo preflight (chave, saúde do container, pastas de
+casos e leitura dos dispositivos existentes) imprime e cria um par de arquivos
+em `relatorios/avaliacoes/avaliacao-<timestamp UTC>-<UUID>.json` e `.md`, com o
+mesmo nome-base, seguro no Windows. Falhas no preflight não geram relatório.
+
+O JSON mantém o formato existente: nota, contagens, pesos e detalhes das
+conversas e turnos, incluindo motivos, violações, divergências e memória de
+cálculo. O Markdown deriva dos mesmos dados, sem recalcular scores, com tabelas
+de resumo (nota, contagens, proporção e porcentagem de turnos atendidos e pesos),
+de conversas (nota, proporção de turnos atendidos, desfecho correto, conversa
+perfeita e motivo) e de turnos (nota do juiz, atendimento, justificativa e
+violações). Também lista divergências e a memória de cálculo do gabarito, que
+não é tracing interno do agente. Conversa perfeita não significa decisão de
+reembolso aprovada.
+
+Os dois arquivos começam vazios e são atualizados, sincronizados, após cada
+conversa avaliada, substituindo o conteúdo anterior sem acumular versões.
+O relatório sempre avisa que contém os resultados avaliados até o momento. Pode ser
+parcial, sem campo de status: se uma avaliação posterior falhar, os scores já
+salvos permanecem. Erros ao conduzir um caso continuam excluídos da nota atual;
+se todos falharem, o relatório fica vazio, com nota 0 e código de saída 1.
+Esses resultados locais podem conter dados sensíveis e `relatorios/` é ignorado
+pelo Git.
+
 ## Onde fica o quê
 
 ```

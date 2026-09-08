@@ -28,12 +28,14 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 RAIZ = Path(__file__).resolve().parent
 sys.path.insert(0, str(RAIZ))
 
-from avaliacao.avaliar import avaliar, nota_final  # noqa: E402
+from avaliacao.avaliar import avaliar, nota_final, salvar  # noqa: E402
 from avaliacao.conversar import ContainerNaoSubiu, conduzir, esperar_saude  # noqa: E402
 from avaliacao.dispositivos import existentes  # noqa: E402
 from avaliacao.llm import disponivel  # noqa: E402
@@ -86,7 +88,12 @@ def main() -> int:
         return 2
 
     validos = existentes(RAIZ / "kb")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    destino = RAIZ / "relatorios" / "avaliacoes" / f"avaliacao-{timestamp}-{uuid4().hex}.json"
     vereditos = []
+    salvar(vereditos, destino)
+    print(f"Relatório: {destino}")
+    print(f"Relatório Markdown: {destino.with_suffix('.md')}")
 
     for pasta in pastas:
         gabarito = json.loads((pasta / "esperado.json").read_text(encoding="utf-8"))
@@ -110,6 +117,7 @@ def main() -> int:
 
         v = avaliar(pasta.name, transcricao, gabarito, validos, usar_modelo=True)
         vereditos.append(v)
+        salvar(vereditos, destino)
         cor = VERDE if v.nota >= 70 else VERMELHO
         if v.zerada:
             # Sem isto a banca vê "0/0 turnos" e não descobre que foi eco.

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from html import escape
 
 from .checagens import checar_transcricao, eh_agente
 from .turno import NotaTurno, avaliar_turno
@@ -177,10 +178,76 @@ def nota_final(vereditos: list[Veredito]) -> float:
     return round(sum(v.nota for v in vereditos) / len(vereditos), 2)
 
 
+def _escapar_markdown(texto: str) -> str:
+    texto = escape(texto).replace("\r\n", "\n").replace("\r", "\n")
+    for caractere in "\\`*_{}[]()#+-.!|~":
+        texto = texto.replace(caractere, "\\" + caractere)
+    return texto.replace("\n", "<br>")
+
+
+def _gerar_relatorio_markdown(relatorio: dict) -> str:
+    atendidos, total = map(int, relatorio["turnos_atendidos"].split("/"))
+    percentual = f"{100 * atendidos / total:.2f}%" if total else "N/A (sem turnos)"
+    linhas = [
+        "# Relatorio de avaliacao", "",
+        "> resultados das conversas avaliadas ate o momento; pode ser parcial; "
+        "casos com erro de conducao nao entram na media", "",
+        "## Resumo", "",
+        "| Indicador | Valor |", "| --- | --- |",
+        f"| Nota (0-100) | {relatorio['nota']} |",
+        f"| Conversas avaliadas | {relatorio['conversas']} |",
+        f"| Conversas perfeitas | {relatorio['conversas_perfeitas']} |",
+        f"| Turnos atendidos | {relatorio['turnos_atendidos']} |",
+        f"| Turnos atendidos (%) | {percentual} |",
+        f"| Desfechos corretos | {relatorio['desfechos_corretos']} |",
+        f"| Peso dos turnos | {relatorio['pesos']['turnos']} |",
+        f"| Peso do desfecho | {relatorio['pesos']['desfecho']} |", "",
+        "## Conversas", "",
+        "| Conversa | Nota /100 | Turnos atendidos (proporcao) | Desfecho correto "
+        "| Conversa perfeita | Motivo |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for conversa in relatorio["detalhe"]:
+        linhas.append(
+            f"| {_escapar_markdown(conversa['conversa'])} | {conversa['nota']} "
+            f"| {conversa['turnos_atendidos']} "
+            f"| {'Sim' if conversa['desfecho_correto'] else 'Nao'} "
+            f"| {'Sim' if conversa['aprovada'] else 'Nao'} "
+            f"| {_escapar_markdown(conversa['motivo'])} |")
+    if not relatorio["detalhe"]:
+        linhas.extend(["", "Nenhuma conversa avaliada."])
+    for conversa in relatorio["detalhe"]:
+        linhas.extend([
+            "", f"## Detalhe: {_escapar_markdown(conversa['conversa'])}", "",
+            "| Turno | Nota do juiz /10 | Atendeu | Porque | Violacoes |",
+            "| --- | --- | --- | --- | --- |",
+        ])
+        for turno in conversa["turnos"]:
+            violacoes = "<br>".join(_escapar_markdown(v) for v in turno["violacoes"])
+            linhas.append(
+                f"| {turno['turno']} | {turno['nota']} "
+                f"| {'Sim' if turno['passou'] else 'Nao'} "
+                f"| {_escapar_markdown(turno['porque'])} | {violacoes} |")
+        if not conversa["turnos"]:
+            linhas.extend(["", "Sem turnos avaliados."])
+        linhas.extend(["", "### Divergencias do desfecho", ""])
+        linhas.extend(f"- {_escapar_markdown(d)}" for d in conversa["divergencias_do_desfecho"])
+        if not conversa["divergencias_do_desfecho"]:
+            linhas.append("- Nenhuma divergencia registrada.")
+        linhas.extend([
+            "", "### Memoria de calculo", "",
+            "Memoria fornecida pelo gabarito; nao e tracing interno do agente.", "",
+        ])
+        linhas.extend(f"- {_escapar_markdown(m)}" for m in conversa["memoria_de_calculo"])
+        if not conversa["memoria_de_calculo"]:
+            linhas.append("- Nenhuma memoria registrada.")
+    return "\n".join(linhas) + "\n"
+
+
 def salvar(vereditos: list[Veredito], destino) -> None:
     turnos = [t for v in vereditos for t in v.turnos]
     destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_text(json.dumps({
+    relatorio = {
         "nota": nota_final(vereditos),
         "conversas": len(vereditos),
         "conversas_perfeitas": sum(1 for v in vereditos if v.aprovada),
@@ -189,4 +256,8 @@ def salvar(vereditos: list[Veredito], destino) -> None:
                                   if not v.desfecho and not v.zerada),
         "pesos": {"turnos": PESO_TURNOS, "desfecho": PESO_DESFECHO},
         "detalhe": [v.como_dict() for v in vereditos],
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    }
+    destino.write_text(json.dumps(relatorio, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+    destino.with_suffix(".md").write_text(_gerar_relatorio_markdown(relatorio),
+                                           encoding="utf-8")
