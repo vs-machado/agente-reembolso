@@ -10,7 +10,7 @@ from app.agents.documento import (
     FatosDocumentaisModel,
     ItemDocumentalModel,
 )
-from app.agents.supervisor.graph import _documento_base
+from app.agents.supervisor.documentos import _documento_base
 from app.agents.normas import (
     AvaliacaoAlcadaModel,
     AvaliacaoNormativaModel,

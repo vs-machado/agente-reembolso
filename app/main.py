@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.agents.supervisor.graph import Supervisor
+from app.agents.supervisor import Supervisor
 from app.llm import carregar_env
 from app.schemas import ChatRequest, ChatResponse
 

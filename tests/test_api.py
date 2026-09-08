@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
-from app.agents.supervisor.graph import Supervisor
+from app.agents.supervisor import Supervisor
 from app.agents.triagem import ExtracaoTriagemModel
 from app.guardrails import identificar_pedido_terceiro
 from app.main import app
