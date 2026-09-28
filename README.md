@@ -1,207 +1,89 @@
-# Comece por aqui
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/bf869ca7-d9a8-4fa0-bce9-026c9a4e1574" width="280" alt="Agente de Reembolso" />
+  <h1>Agente de Reembolso</h1>
+  <p>Chatbot de atendimento que conversa com o usuário, consulta documentos e normas da empresa e decide sobre pedidos de reembolso médico.</p>
+</div>
 
-O enunciado completo está em **`instrucoes_da_prova.pdf`**. Leia antes de
-codificar — ele define o que é avaliado, e há regra sobre como usar IA nele.
+O Agente de Reembolso é um chatbot de atendimento que conversa com o usuário para entender seu pedido, recebe comprovantes e consulta os documentos e normas da empresa para decidir se há direito ao reembolso médico. Conforme o caso, pode aprovar o pedido integral ou parcialmente, negá-lo, solicitar informações adicionais ou encaminhá-lo a um analista humano. Quando possível, calcula o valor a reembolsar e explica as regras usadas na decisão.
 
-Isto aqui é só para você começar a rodar em cinco minutos.
+## Como funciona
 
-## 1. Configure a sua chave
+O agente acompanha o pedido ao longo da conversa: recebe informações e comprovantes, identifica o que ainda falta e retoma a análise quando novos dados chegam. Um supervisor em LangGraph coordena as etapas conforme o estado do atendimento, sem exigir que a carteirinha, o pedido e o comprovante cheguem em uma ordem fixa. O histórico e os anexos são mantidos em memória durante a sessão:
 
-Crie uma chave pessoal da API do Gemini no Google AI Studio e informe-a no
-`.env`:
+1. **Triagem:** identifica a intenção, consulta o beneficiário pelo MCP e verifica se há dados suficientes para continuar. Pedidos sobre terceiros são bloqueados sem encerrar o atendimento do titular.
+2. **Documento:** lê anexos PDF, DOCX, JPEG ou PNG (com OCR para imagens), classifica o conteúdo e extrai itens, valores e eventuais pendências. Documentos sem natureza médica não seguem para a análise normativa.
+3. **Normas:** recupera fontes da `kb/` conforme a data do atendimento, avalia cobertura e alçada e consulta o histórico da operadora quando necessário. Os parâmetros encontrados nas normas (teto em URS, valor da URS, coparticipação e eventual limite anual) alimentam um cálculo determinístico sobre os valores extraídos dos comprovantes. O cálculo considera os reembolsos anteriores do ano quando a norma exige saldo anual; valores em moeda estrangeira dependem de cotação PTAX.
+4. **Resposta:** consolida os resultados no contrato da API. Pode retornar `APROVADO`, `APROVADO_PARCIAL`, `NEGADO`, `PENDENTE_DOCUMENTO`, `FORA_DE_ESCOPO` ou `ESCALADO_ANALISTA`, conforme os fatos e a fundamentação disponíveis. No escalonamento, solicita um protocolo ao MCP; quando não há dados ou fontes suficientes para concluir, apresenta pendências em vez de presumir uma decisão. A resposta textual passa por revisão de dados sensíveis.
 
-```env
-BOOTCAMP_API_KEY=sua_chave
+O índice normativo é construído antes de iniciar o serviço. A ingestão com LlamaIndex extrai os documentos PDF e DOCX de `kb/`, gera chunks com metadados de origem e vigência e persiste um índice vetorial local e outro BM25 em `storage/`. Na consulta, a busca híbrida combina os resultados por RRF e filtra as fontes pela data do fato. Um reranker ONNX local pode refinar a ordem quando seus artefatos estão presentes; sem eles, a recuperação continua funcionando.
+
+**Vigência e invalidação de fontes:** o catálogo identifica circulares que revogam outras circulares e delimita o fim de vigência das revogadas. A recuperação exclui do caso as fontes fora do período aplicável e os materiais classificados apenas como apoio ou pendentes de curadoria. Já na leitura normativa, os trechos recuperados são separados em aplicáveis e afastados, com motivo; uma circular posterior pode alterar pontualmente uma regra antiga sem invalidar todo o regulamento. Essa seleção depende da data e dos fatos do pedido: não é uma remoção definitiva dos chunks do índice. Se houver conflito material entre fontes vigentes, o agente não força uma decisão automática.
+
+O modelo de chat utilizado é o **Gemini 2.5 Flash Lite**; embeddings usam `gemini-embedding-2`. As integrações externas usadas na execução são a API do Gemini, o servidor MCP da operadora e, para conversão de moeda quando aplicável, a API PTAX do Banco Central.
+
+## Executar localmente
+
+Pré-requisitos: Python 3.11, Docker com Compose e uma chave da API do Gemini. Para executar OCR de imagens fora do container, também é necessário Tesseract com o idioma português; a imagem Docker já inclui essa dependência.
+
+1. Crie um ambiente virtual e instale as dependências:
+
+   ```bash
+   python -m venv .venv
+   # Linux/macOS: source .venv/bin/activate
+   # PowerShell: .venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
+   ```
+
+2. Crie `.env` a partir de `.env.example` e preencha `BOOTCAMP_API_KEY`. As variáveis `MCP_OPERADORA_URL` e `MCP_OPERADORA_TOKEN` já trazem valores para o servidor local.
+3. Gere o índice **antes** de construir a imagem, pois o `Dockerfile` copia `storage/` pronto:
+
+   ```bash
+   python -m ingest.build
+   ```
+
+   Opcionalmente, para habilitar o reranker local (requer download de artefatos), execute `python -m ingest.gerar_reranker`. O diretório `storage/` não é versionado; refaça a ingestão quando os documentos da base mudarem.
+4. Suba o agente e o MCP:
+
+   ```bash
+   docker compose up --build
+   ```
+
+O agente fica em `http://localhost:8000` e o MCP em `http://localhost:9000/mcp`. O Compose configura a URL interna do MCP e usa as personas de `casos_treino/` como cadastro local. Verifique `GET http://localhost:8000/health` (resposta `{"status":"ok"}`).
+
+## API
+
+| Rota | Uso |
+| --- | --- |
+| `GET /health` | Verifica se a API está no ar. |
+| `POST /chat` | Processa um turno da sessão. |
+| `POST /reset` | Apaga os checkpoints e sessões em memória. |
+
+Exemplo de requisição ao `POST /chat`:
+
+```json
+{
+  "session_id": "atendimento-001",
+  "mensagem": "Quero solicitar reembolso de uma consulta.",
+  "anexo": null
+}
 ```
 
-O arquivo está no `.gitignore`, então `git add -A` não o leva para o seu
-repositório. **Não publique a chave.**
+Para enviar um documento, substitua `anexo` por um objeto com `filename`, `mime_type` e `base64` (conteúdo do arquivo codificado em base64). Envie turnos seguintes com o mesmo `session_id`. A resposta contém `resposta`, `categoria_documento`, `decisao`, `valor_solicitado_brl`, `valor_reembolso_brl`, `regras_aplicadas`, `protocolo` e `pendencias`; campos ainda não apurados podem ser `null`. Como o estado é apenas em memória, ele se perde ao reiniciar o processo e não é compartilhado entre instâncias.
 
-## 2. Confira que está de pé
+## Treino e testes
 
-**Python 3.11** — a mesma do Dockerfile.
+Com os dois serviços em execução e a chave configurada, rode `python rodar_treino.py` para simular as conversas de `casos_treino/`. Use `python rodar_treino.py -v` para acompanhar os turnos ou `python rodar_treino.py --caso 02` para um caso específico. Os relatórios JSON e Markdown são gravados em `relatorios/avaliacoes/` (diretório ignorado pelo Git). As chamadas do treino e do agente consomem a cota da API do Gemini.
 
-```bash
-python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m app.llm
-```
+Os testes automatizados podem ser executados com `python -m pytest tests` (instale `pytest` separadamente, pois ele não consta em `requirements.txt`).
 
-Saída esperada:
+## Organização
 
-```
-chat      : pronto.
-embeddings: 1536 dimensões
-```
-
-## 3. O modelo
-
-**Gemini 2.5 Flash Lite**, servido pela API oficial do Google.
-
-`app/llm.py` já traz os clientes configurados para a API oficial.
-
-```python
-from app.llm import criar_llm, criar_embeddings
-
-llm = criar_llm()                    # ChatGoogleGenerativeAI, pronto para bind_tools
-emb = criar_embeddings()             # gemini-embedding-2, 1536 dimensões
-```
-
-Com LlamaIndex:
-
-```python
-from llama_index.core import Settings
-from app.llm import criar_llm_llamaindex, criar_embeddings_llamaindex
-
-Settings.llm = criar_llm_llamaindex()
-Settings.embed_model = criar_embeddings_llamaindex()
-```
-
-E um agente com ferramentas, que é o que a prova pede:
-
-```python
-from langgraph.prebuilt import create_react_agent
-from app.llm import criar_llm
-
-agente = create_react_agent(criar_llm(), [suas_ferramentas_mcp])
-```
-
-## 4. As bibliotecas são sugestão
-
-O `requirements.txt` traz um conjunto **sugerido**, com as versões fixadas — são
-as que a prova usou e que resolvem juntas no Python 3.11. Instalar e sair
-codificando funciona.
-
-| | Versão |
-|---|---|
-| `langchain-google-genai` | 4.3.2 |
-| `langgraph` · `langchain-core` | 1.2.10 · 1.5.3 |
-| `llama-index-core` | 0.14.23 |
-| `llama-index-llms-google-genai` · `-embeddings-` | 0.9.6 · 0.5.1 |
-| `llama-index-retrievers-bm25` | 0.7.1 |
-| `fastapi` · `uvicorn` · `pydantic` · `httpx` | 0.141.1 · 0.52.1 · 2.13.4 · 0.28.1 |
-| `pymupdf` · `pytesseract` · `pillow` · `python-docx` | 1.28.2 · 0.3.13 · 12.3.0 · 1.2.0 |
-| `mcp` | 1.29.0 — **não** 2.0: a série 2.0 removeu o `fastmcp` que o servidor usa |
-
-**Pode trocar.** Outra biblioteca, outra versão, outro framework de API. O que
-não muda são as exigências do item 4 do enunciado (grafo, LlamaIndex na
-indexação, vector store embarcado, busca híbrida, Pydantic na saída) e o
-contrato do item 6.
-
-Se trocar, **fixe a versão que usou**. Build que resolve dependência na hora
-quebra sozinho entre o seu teste e a correção — e aí quem perde é você.
-
-> Nota sobre o LangGraph 1.x: `langgraph.prebuilt.create_react_agent` ainda
-> funciona, mas avisa que mudou para `langchain.agents.create_agent`. Vale
-> lembrar que o item 4 pede supervisor com handoff explícito — um ReAct pronto
-> resolve o "chamar ferramenta", não a arquitetura que a prova cobra.
-
-## 5. Uso da API
-
-As chamadas consomem a cota da chave pessoal configurada. Duas boas práticas:
-
-- **Recupere somente os trechos relevantes.** Reenviar a base inteira aumenta
-  a latência e o consumo de tokens. A base tem cerca de 89 mil tokens.
-- **Não deixe laço rodando.** Um `while True` esquecido pode consumir a sua
-  cota rapidamente.
-
-## 6. Suba o servidor MCP
-
-Ele **vem no pacote**, em `mcp/` — nada para baixar. Duas formas:
-
-```bash
-docker compose up mcp                            # porta 9000
-```
-
-```bash
-cd mcp && MCP_OPERADORA_DADOS=../casos_treino MCP_OPERADORA_TOKEN=treino \
-  ../.venv/bin/python -m mcp_operadora.server    # sem Docker
-```
-
-Confira que respondeu:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9000/mcp   # 401 = de pé
-```
-
-`401` é o esperado sem token — significa que o servidor está no ar e exigindo o
-`Authorization: Bearer treino`, que já está no seu `.env`.
-
-Três ferramentas: `consultar_beneficiario`, `consultar_historico` e
-`abrir_protocolo`. O detalhe de cada uma está em `mcp/README.md` — vale ler o
-trecho sobre o histórico, porque há caso na avaliação que depende de somá-lo.
-
-**O cadastro da avaliação é outro.** Localmente o servidor lê as personas do seu
-`casos_treino/`; na correção a banca sobe o mesmo servidor com outro arquivo,
-com outras pessoas. Não decore carteirinha — o que tem de funcionar é o cliente.
-
-## 7. Rodar os casos de treino
-
-Precisa estar de pé: o **MCP na 9000** e o **seu container na 8000**. O script
-não sobe nada por você.
-
-```bash
-.venv/bin/python rodar_treino.py          # as três conversas
-.venv/bin/python rodar_treino.py -v       # mostra cada turno
-.venv/bin/python rodar_treino.py --caso 02
-```
-
-Não é uma bateria de asserções sobre uma resposta pronta. Por turno:
-
-1. um modelo faz o papel do beneficiário e escreve a mensagem, reagindo à sua
-   resposta anterior;
-2. ela vai para o seu `POST /chat`, mesmo `session_id`, anexo em base64;
-3. o **juiz** — outro modelo — decide se aquele turno foi atendido;
-4. no último turno o juiz também recebe o gabarito e confere se você não o
-   contradiz;
-5. sem modelo nenhum: porta de entrada (resposta repetida) e violações de CPF,
-   CID e dado de terceiro.
-
-**As duas pontas usam a mesma chave do seu `.env` e a API oficial do Gemini** —
-o mesmo modelo responde ao seu agente. O código está em `avaliacao/`.
-
-Uma rodada completa custa cerca de 13 mil tokens de entrada, fora o que o seu
-agente gasta; não deixe a avaliação rodando em laço.
-
-A nota de cada conversa vem **70% dos turnos atendidos e o restante do
-desfecho correto**; a nota final é a média das conversas. Estas três **não valem nota** — as da
-avaliação oficial são outras, e lá a conta é a mesma.
-
-### Relatórios locais
-
-Cada execução que passa pelo preflight (chave, saúde do container, pastas de
-casos e leitura dos dispositivos existentes) imprime e cria um par de arquivos
-em `relatorios/avaliacoes/avaliacao-<timestamp UTC>-<UUID>.json` e `.md`, com o
-mesmo nome-base, seguro no Windows. Falhas no preflight não geram relatório.
-
-O JSON mantém o formato existente: nota, contagens, pesos e detalhes das
-conversas e turnos, incluindo motivos, violações, divergências e memória de
-cálculo. O Markdown deriva dos mesmos dados, sem recalcular scores, com tabelas
-de resumo (nota, contagens, proporção e porcentagem de turnos atendidos e pesos),
-de conversas (nota, proporção de turnos atendidos, desfecho correto, conversa
-perfeita e motivo) e de turnos (nota do juiz, atendimento, justificativa e
-violações). Também lista divergências e a memória de cálculo do gabarito, que
-não é tracing interno do agente. Conversa perfeita não significa decisão de
-reembolso aprovada.
-
-Os dois arquivos começam vazios e são atualizados, sincronizados, após cada
-conversa avaliada, substituindo o conteúdo anterior sem acumular versões.
-O relatório sempre avisa que contém os resultados avaliados até o momento. Pode ser
-parcial, sem campo de status: se uma avaliação posterior falhar, os scores já
-salvos permanecem. Erros ao conduzir um caso continuam excluídos da nota atual;
-se todos falharem, o relatório fica vazio, com nota 0 e código de saída 1.
-Esses resultados locais podem conter dados sensíveis e `relatorios/` é ignorado
-pelo Git.
-
-## Onde fica o quê
-
-```
-app/llm.py          o modelo, já configurado — comece por ele
-mcp/                o servidor MCP da operadora, pronto — só subir
-app/main.py         o contrato HTTP: /health, /chat, /reset
-app/agents/         supervisor e subagentes: é aqui que está a prova
-app/rag/            recuperação sobre a kb/
-ingest/build.py     constrói o índice em storage/ (rode antes do Docker)
-kb/                 os 10 documentos normativos da sua prova
-casos_treino/       as três conversas de treino
-avaliacao/          o motor de correção — leia, não precisa alterar
-```
+| Caminho | Responsabilidade |
+| --- | --- |
+| `app/main.py`, `app/schemas.py` | API HTTP e modelos de entrada/saída. |
+| `app/agents/supervisor/` | Grafo, roteamento, estado da conversa e consolidação da resposta. |
+| `app/agents/triagem/`, `documento/`, `normas/` | Etapas especializadas do atendimento. |
+| `app/rag/`, `ingest/`, `kb/` | Recuperação, construção do índice e documentos normativos. |
+| `app/tools/`, `app/guardrails/`, `app/calculo/` | Integrações, revisão da resposta e cálculos. |
+| `mcp/` | Servidor local da operadora e suas três ferramentas: cadastro, histórico e protocolo. |
+| `casos_treino/`, `avaliacao/`, `rodar_treino.py` | Cenários e avaliação local. |
