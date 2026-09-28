@@ -1,8 +1,10 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/bf869ca7-d9a8-4fa0-bce9-026c9a4e1574" width="280" alt="Agente de Reembolso" />
+  <img src="https://github.com/user-attachments/assets/6f358b83-6ce8-40a4-ba2a-02ac73aeabb7" width="280" alt="Agente de Reembolso" />
   <h1>Agente de Reembolso</h1>
   <p>Chatbot de atendimento que conversa com o usuário, consulta documentos e normas da empresa e decide sobre pedidos de reembolso médico.</p>
 </div>
+
+## Resumo
 
 O Agente de Reembolso é um chatbot de atendimento que conversa com o usuário para entender seu pedido, recebe comprovantes e consulta os documentos e normas da empresa para decidir se há direito ao reembolso médico. Conforme o caso, pode aprovar o pedido integral ou parcialmente, negá-lo, solicitar informações adicionais ou encaminhá-lo a um analista humano. Quando possível, calcula o valor a reembolsar e explica as regras usadas na decisão.
 
