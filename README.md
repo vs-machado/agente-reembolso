@@ -2,6 +2,14 @@
   <img src="https://github.com/user-attachments/assets/6f358b83-6ce8-40a4-ba2a-02ac73aeabb7" width="280" alt="Agente de Reembolso" />
   <h1>Agente de Reembolso</h1>
   <p>Chatbot de atendimento que conversa com o usuário, consulta documentos e normas da empresa e decide sobre pedidos de reembolso médico.</p>
+  <table>
+    <tr>
+      <td align="center" width="25%"><a href="https://github.com/user-attachments/assets/d15f3871-c367-4c62-85a0-63ab55d10e0d"><img src="https://github.com/user-attachments/assets/d15f3871-c367-4c62-85a0-63ab55d10e0d" width="160" alt="Tela do agente de reembolso - imagem 1" /></a></td>
+      <td align="center" width="25%"><a href="https://github.com/user-attachments/assets/e18c60b1-969d-44e5-9ab9-5ee4ba2ee696"><img src="https://github.com/user-attachments/assets/e18c60b1-969d-44e5-9ab9-5ee4ba2ee696" width="160" alt="Tela do agente de reembolso - imagem 2" /></a></td>
+      <td align="center" width="25%"><a href="https://github.com/user-attachments/assets/0dfeea40-37d6-407f-9666-5e8cf75f1a76"><img src="https://github.com/user-attachments/assets/0dfeea40-37d6-407f-9666-5e8cf75f1a76" width="160" alt="Tela do agente de reembolso - imagem 3" /></a></td>
+      <td align="center" width="25%"><a href="https://github.com/user-attachments/assets/1db6b10c-66dc-4f3d-975c-36a4cf9c800a"><img src="https://github.com/user-attachments/assets/1db6b10c-66dc-4f3d-975c-36a4cf9c800a" width="160" alt="Tela do agente de reembolso - imagem 4" /></a></td>
+    </tr>
+  </table>
 </div>
 
 ## Resumo
