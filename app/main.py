@@ -5,11 +5,17 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.agents.supervisor import Supervisor
 from app.llm import carregar_env
 from app.schemas import ChatRequest, ChatResponse
+from app.treino_interface import executar_treino
 
 # Lê o `.env` no start. O que já vem do ambiente vence — é assim que a banca
 # injeta as credenciais dela no `docker run`.
@@ -17,6 +23,21 @@ carregar_env()
 
 app = FastAPI(title="Agente de Reembolso")
 supervisor = Supervisor()
+app.mount("/ui", StaticFiles(directory=Path(__file__).parent / "interface", html=True), name="interface")
+
+
+@app.get("/", include_in_schema=False)
+def inicio() -> RedirectResponse:
+    return RedirectResponse(url="/ui/")
+
+
+@app.get("/treino", include_in_schema=False)
+def treino(caso: str = "todos") -> StreamingResponse:
+    if os.getenv("INTERFACE_TREINO") != "1":
+        raise HTTPException(status_code=404)
+    if caso not in {"todos", "01", "02", "03"}:
+        raise HTTPException(status_code=400, detail="Caso inválido")
+    return StreamingResponse(executar_treino(caso), media_type="application/x-ndjson")
 
 
 @app.get("/health")

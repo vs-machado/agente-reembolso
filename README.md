@@ -60,6 +60,12 @@ Pré-requisitos: Python 3.11, Docker com Compose e uma chave da API do Gemini. P
 
 O agente fica em `http://localhost:8000` e o MCP em `http://localhost:9000/mcp`. O Compose configura a URL interna do MCP e usa as personas de `casos_treino/` como cadastro local. Verifique `GET http://localhost:8000/health` (resposta `{"status":"ok"}`).
 
+### Interface de chat
+
+Para acompanhar a nota no terminal após a simulação, use `docker compose logs -f agente` e procure a linha `treino_nota_final`. Quando a avaliação do juiz falhar, o log indica `nota=indisponivel` ou uma nota parcial com `sem_avaliacao` maior que zero.
+
+Com o Compose em execução, abra `http://localhost:8000/` no navegador. Escolha um dos casos de treino ou **Todos os casos** e clique em **Iniciar simulação**. A tela acompanha os turnos gerados pelo beneficiário simulado, as respostas do agente, a decisão, o valor do reembolso, o protocolo (quando disponíveis) e a avaliação final calculada pelo mesmo código de `rodar_treino.py`. Nenhuma mensagem precisa ser digitada. Os relatórios são gravados em `relatorios/avaliacoes/` dentro do container. A interface usa a chave `BOOTCAMP_API_KEY` e consome a cota da API do Gemini; cada execução é uma simulação nova. A rota de treino só é habilitada no Compose local com `INTERFACE_TREINO=1`; sem essa variável, a imagem mantém as três rotas de API obrigatórias e a página informativa.
+
 ## API
 
 | Rota | Uso |

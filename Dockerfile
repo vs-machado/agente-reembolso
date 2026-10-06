@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY storage/ ./storage/
 COPY kb/ ./kb/
 COPY app/ ./app/
+COPY avaliacao/ ./avaliacao/
+COPY casos_treino/ ./casos_treino/
+COPY anexos/treino/ ./anexos/treino/
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

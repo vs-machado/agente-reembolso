@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -48,7 +49,8 @@ def _anexo(pasta: Path, anexo: dict) -> dict:
 
 
 def conduzir(pasta_caso: Path, url: str, sessao: str,
-             dinamico: bool = True) -> list[dict]:
+             dinamico: bool = True, ao_turno: Callable[[dict], None] | None = None,
+             limpar: bool = True) -> list[dict]:
     """Devolve [{turno, mensagem, anexo, resposta, estruturado}].
 
     Com `dinamico`, quem fala do outro lado é o beneficiário simulado: o roteiro
@@ -64,7 +66,8 @@ def conduzir(pasta_caso: Path, url: str, sessao: str,
     transcricao: list[dict] = []
 
     with httpx.Client(timeout=TIMEOUT_TURNO) as cliente:
-        cliente.post(f"{url}/reset", json={})
+        if limpar:
+            cliente.post(f"{url}/reset", json={})
         for t in turnos:
             mensagem = t["mensagem"]
             if dinamico and mensagem.strip():
@@ -86,6 +89,8 @@ def conduzir(pasta_caso: Path, url: str, sessao: str,
                 registro |= {"resposta": "", "estruturado": {},
                              "erro": f"{type(erro).__name__}: {erro}"}
                 transcricao.append(registro)
+                if ao_turno:
+                    ao_turno(registro)
                 continue
 
             registro |= {
@@ -93,4 +98,6 @@ def conduzir(pasta_caso: Path, url: str, sessao: str,
                 "estruturado": {k: v for k, v in devolvido.items() if k != "resposta"},
             }
             transcricao.append(registro)
+            if ao_turno:
+                ao_turno(registro)
     return transcricao

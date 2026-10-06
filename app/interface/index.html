@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Treino | Agente de Reembolso</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script src="/ui/chat.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="identity">
+        <span class="mark" aria-hidden="true">R</span>
+        <div>
+          <strong>Agente de Reembolso</strong>
+          <span class="subtitle">Simulação de atendimento</span>
+        </div>
+      </div>
+      <span class="subtitle">Treino local</span>
+    </header>
+
+    <section class="conversation" aria-label="Simulação de conversa">
+      <div class="messages" id="mensagens" role="log" aria-live="polite" aria-relevant="additions">
+        <div class="welcome" id="boas-vindas">
+          <span class="welcome-mark" aria-hidden="true">R</span>
+          <h1>Veja o agente em ação</h1>
+          <p>Escolha um caso de treino. O beneficiário conversa com o agente e o avaliador calcula a nota ao final.</p>
+        </div>
+      </div>
+      <div class="composer-wrap">
+        <div class="controls" id="controles">
+          <label for="caso">Caso de treino</label>
+          <div class="actions">
+            <select id="caso">
+              <option value="todos">Todos os casos</option>
+              <option value="01">01 · Fora de ordem</option>
+              <option value="02">02 · Sessão pelo histórico</option>
+              <option value="03">03 · Inválido e alçada</option>
+            </select>
+            <button class="send-button" id="iniciar" type="button">Iniciar simulação</button>
+          </div>
+        </div>
+        <p class="hint" id="estado" role="status">A simulação usa a API do Gemini e pode levar alguns minutos.</p>
+        <p class="error" id="erro" role="alert" hidden></p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

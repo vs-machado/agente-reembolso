@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 import re
+import json
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -75,6 +76,38 @@ class TesteApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_interface_de_chat(self) -> None:
+        inicio = self.client.get("/", follow_redirects=False)
+        pagina = self.client.get("/ui/")
+        script = self.client.get("/ui/chat.js")
+        estilos = self.client.get("/ui/style.css")
+
+        self.assertEqual(inicio.status_code, 307)
+        self.assertEqual(inicio.headers["location"], "/ui/")
+        self.assertEqual(pagina.status_code, 200)
+        self.assertIn('id="iniciar"', pagina.text)
+        self.assertIn('id="caso"', pagina.text)
+        self.assertIn('id="controles"', pagina.text)
+        self.assertEqual(script.status_code, 200)
+        self.assertIn('fetch(`/treino?', script.text)
+        self.assertEqual(estilos.status_code, 200)
+
+    def test_treino_so_funciona_quando_habilitado(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            resposta = self.client.get("/treino")
+        self.assertEqual(resposta.status_code, 404)
+
+    def test_treino_transmite_eventos(self) -> None:
+        eventos = [json.dumps({"tipo": "caso", "nome": "01"}) + "\n",
+                   json.dumps({"tipo": "fim", "nota": 80}) + "\n"]
+        with patch.dict("os.environ", {"INTERFACE_TREINO": "1"}):
+            with patch("app.main.executar_treino", return_value=iter(eventos)) as executar:
+                resposta = self.client.get("/treino?caso=01")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual([json.loads(linha)["tipo"] for linha in resposta.text.splitlines()], ["caso", "fim"])
+        executar.assert_called_once_with("01")
 
     def test_chat_retorna_formato_da_resposta(self) -> None:
         response = self.client.post(

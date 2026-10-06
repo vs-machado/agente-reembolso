@@ -27,3 +27,4 @@ services:
     environment:
       # dentro da rede do compose o MCP atende pelo nome do serviço
       MCP_OPERADORA_URL: http://mcp:9000/mcp
+      INTERFACE_TREINO: "1"
